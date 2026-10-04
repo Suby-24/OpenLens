@@ -1,10 +1,11 @@
-"""Read YouTube watch history from a user-provided Google Takeout archive."""
+"""Read YouTube and Chrome history from user-provided Google Takeout files."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from html.parser import HTMLParser
+import json
 from pathlib import Path
 import re
 from urllib.parse import parse_qs, urlparse
@@ -12,6 +13,7 @@ from zipfile import ZipFile
 
 
 WATCH_HISTORY_SUFFIX = "YouTube and YouTube Music/history/watch-history.html"
+CHROME_HISTORY_SUFFIX = "Chrome/History.json"
 DATE_PATTERN = re.compile(r"[A-Z][a-z]{2} \d{1,2}, \d{4}, \d{1,2}:\d{2}:\d{2}\s*[AP]M GMT[+-]\d{2}:\d{2}")
 
 
@@ -21,6 +23,16 @@ class WatchEvent:
     title: str
     url: str
     watched_at: datetime
+
+
+@dataclass(frozen=True)
+class ChromeNavigationEvent:
+    """A tab navigation, not necessarily a complete browser-history visit."""
+
+    url: str
+    title: str
+    visited_at: datetime
+    source: str = "session_navigation"
 
 
 def _video_id(url: str) -> str | None:
@@ -109,3 +121,57 @@ def read_watch_events(archive_path: str | Path) -> list[WatchEvent]:
     parser = _WatchHistoryHTMLParser()
     parser.feed(html)
     return parser.events
+
+
+def read_chrome_navigation_events(path: str | Path) -> list[ChromeNavigationEvent]:
+    """Read Chrome Session navigations from a Takeout folder, JSON file, or ZIP.
+
+    Only History.json is read. Other Chrome Takeout files can contain unrelated
+    sensitive information and are intentionally ignored. The returned records
+    are sorted oldest first; they are not a complete browser-history export.
+    """
+    source = Path(path)
+    if source.is_dir():
+        raw = (source / "History.json").read_text(encoding="utf-8")
+    elif source.suffix.lower() == ".zip":
+        with ZipFile(source) as archive:
+            matches = [name for name in archive.namelist() if name.endswith(CHROME_HISTORY_SUFFIX)]
+            if len(matches) != 1:
+                raise ValueError(f"Expected one Chrome/History.json, found {len(matches)}")
+            raw = archive.read(matches[0]).decode("utf-8")
+    else:
+        raw = source.read_text(encoding="utf-8")
+
+    data = json.loads(raw)
+    if not isinstance(data, dict) or not isinstance(data.get("Session"), list):
+        raise ValueError("Chrome History.json must contain a Session list")
+
+    events: list[ChromeNavigationEvent] = []
+    for session in data["Session"]:
+        if not isinstance(session, dict):
+            continue
+        tab = session.get("tab", {})
+        if not isinstance(tab, dict) or not isinstance(tab.get("navigation"), list):
+            continue
+        for navigation in tab["navigation"]:
+            if not isinstance(navigation, dict):
+                continue
+            url = navigation.get("virtual_url")
+            millis = navigation.get("timestamp_msec")
+            if not isinstance(url, str) or not url.strip():
+                continue
+            if not isinstance(millis, int) or isinstance(millis, bool) or millis <= 0:
+                continue
+            try:
+                visited_at = datetime.fromtimestamp(millis / 1000, timezone.utc)
+            except (OverflowError, OSError, ValueError):
+                continue
+            title = navigation.get("title")
+            events.append(
+                ChromeNavigationEvent(
+                    url=url,
+                    title=" ".join(title.split()) if isinstance(title, str) else "",
+                    visited_at=visited_at,
+                )
+            )
+    return sorted(events, key=lambda event: event.visited_at)

@@ -2,7 +2,7 @@
 
 OpenLens는 내가 소비한 콘텐츠를 바탕으로 관심사와 정보 소비 패턴을 살펴보는 개인용 ML 프로젝트입니다. 웹 방문 기록과 YouTube 시청 기록에서 주제를 찾고, 한 주제 안에서 반복해서 접하는 논점과 시간에 따른 변화를 분석하는 것을 목표로 합니다.
 
-현재 상태: **YouTube Takeout 읽기와 데이터 수량 확인 구현**. 분석 모델은 아직 구현되지 않았습니다.
+현재 상태: **YouTube 시청 기록과 Chrome 세션 이동 기록 읽기 구현**. 분석 모델은 아직 구현되지 않았습니다.
 
 ## 첫 완성본의 범위
 
@@ -55,6 +55,8 @@ openlens /path/to/takeout.zip --days 90
 ```
 
 원본 ZIP을 저장소 안에 복사하거나 GitHub에 올리지 마세요. 이 명령은 영상 제목이나 URL을 출력하지 않으며, 분석 결과를 파일로 저장하지도 않습니다. 현재 파서는 YouTube의 HTML 시청 기록 형식을 지원합니다.
+
+Chrome 기록은 Python 코드에서 `read_chrome_navigation_events("/path/to/Takeout/Chrome")`로 읽을 수 있습니다. 이 함수는 `History.json`의 `Session → tab → navigation`만 처리하고, 시각을 UTC로 바꾼 뒤 과거순으로 정렬합니다. `Browser History`와 `Typed Url`은 아직 처리하지 않습니다. 세션 이동 기록은 전체 방문 기록이 아니며, 다른 Chrome Takeout 파일(주소·기기 설정 등)은 읽지 않습니다.
 
 ## 개인정보와 GitHub
 
