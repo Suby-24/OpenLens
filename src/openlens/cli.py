@@ -11,7 +11,7 @@ from .takeout import read_watch_events
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="openlens")
-    parser.add_argument("archive", help="Path to a YouTube Google Takeout ZIP file")
+    parser.add_argument("archive", help="Path to a YouTube Takeout ZIP or merged CSV file")
     parser.add_argument("--days", type=int, default=90, help="Look-back window (default: 90)")
     args = parser.parse_args()
     if args.days <= 0:

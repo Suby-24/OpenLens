@@ -131,7 +131,7 @@ def cluster_watch_events(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Cluster local YouTube Takeout titles")
-    parser.add_argument("archive", type=Path, help="YouTube Takeout ZIP path")
+    parser.add_argument("archive", type=Path, help="YouTube Takeout ZIP or merged CSV path")
     parser.add_argument("--k", type=int, required=True, help="Number of clusters to test")
     parser.add_argument("--days", type=int, default=90, help="Look-back days (default: 90)")
     args = parser.parse_args()

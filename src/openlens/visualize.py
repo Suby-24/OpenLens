@@ -114,7 +114,7 @@ def write_cluster_report(result: ClusteringResult, output: Path) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Create a private local cluster report")
-    parser.add_argument("archive", type=Path, help="YouTube Takeout ZIP path")
+    parser.add_argument("archive", type=Path, help="YouTube Takeout ZIP or merged CSV path")
     parser.add_argument("--k", type=int, required=True, help="Number of clusters")
     parser.add_argument("--days", type=int, default=90, help="Look-back days (default: 90)")
     args = parser.parse_args()

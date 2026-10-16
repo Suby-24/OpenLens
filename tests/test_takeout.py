@@ -5,10 +5,33 @@ from tempfile import TemporaryDirectory
 from unittest import TestCase
 from zipfile import ZipFile
 
-from openlens.takeout import read_chrome_navigation_events, read_watch_events
+from openlens.takeout import (
+    merge_watch_events,
+    read_chrome_navigation_events,
+    read_watch_events,
+    write_watch_events_csv,
+)
 
 
 class TakeoutParserTests(TestCase):
+    def test_korean_history_and_merged_csv(self) -> None:
+        html = '''<div class="outer-cell"><div class="content-cell mdl-typography--body-1">
+        시청함 <a href="https://www.youtube.com/watch?v=abc123">운동 영상</a><br>
+        2026. 10. 16. 오전 11:05:58 GMT+04:00<br></div></div>'''
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = root / "first.zip"
+            second = root / "second.zip"
+            for path in (first, second):
+                with ZipFile(path, "w") as archive:
+                    archive.writestr("Takeout/YouTube 및 YouTube Music/시청 기록/시청 기록.html", html)
+            merged = merge_watch_events(first, second)
+            output = write_watch_events_csv(merged, root / "merged.csv")
+            loaded = read_watch_events(output)
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(loaded, merged)
+        self.assertEqual(loaded[0].watched_at.utcoffset(), timedelta(hours=4))
+
     def test_reads_watch_event_and_ignores_other_links(self) -> None:
         html = """<div class="outer-cell">
           <div class="content-cell mdl-typography--body-1">

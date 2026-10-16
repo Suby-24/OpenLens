@@ -57,12 +57,31 @@ python3 -m venv .venv
 
 원본 ZIP을 저장소 안에 복사하거나 GitHub에 올리지 마세요. 이 명령은 영상 제목이나 URL을 출력하지 않으며, 분석 결과를 파일로 저장하지도 않습니다. 현재 파서는 YouTube의 HTML 시청 기록 형식을 지원합니다.
 
+여러 YouTube Takeout 내보내기를 하나로 합칠 때는 아래처럼 실행합니다. 영어·한국어 시청 기록 HTML을 읽고, 동일 영상 ID와 시청 시각이 모두 같은 이벤트만 중복으로 제거합니다. 같은 영상을 다른 시각에 반복 시청했다면 별도 이벤트로 유지합니다. 결과 CSV의 열은 `video_id,title,url,watched_at`이며, 시각은 UTC 오프셋이 포함된 ISO 8601 형식입니다. CSV는 시청 시각순으로 저장됩니다.
+
+```bash
+.venv/bin/python -m openlens.merge /path/to/older.zip /path/to/newer.zip --output data/youtube-watch-events.csv
+.venv/bin/openlens data/youtube-watch-events.csv --days 90
+```
+
+`data/`는 Git에서 제외되지만 CSV에 개인 시청 제목과 URL이 들어 있으므로 공유하지 마세요. 이후 클러스터링과 시각화 명령에도 ZIP 대신 이 CSV를 입력할 수 있습니다. 이 CSV는 분류 모델의 입력 데이터이며, 사람이 붙일 카테고리 레이블은 아직 포함하지 않습니다.
+
+### 클러스터별 레이블링 샘플
+
+통합 CSV를 클러스터링한 뒤 각 그룹에서 중심에 가장 가까운 영상 20개씩 뽑아 별도 CSV를 만들 수 있습니다. `rank=1`이 그룹 중심에 가장 가까운 영상입니다. 이 파일의 `category_label` 열에 영상별 상위 카테고리를 직접 입력하세요. 같은 클러스터라고 모두 같은 카테고리로 자동 지정하지 않습니다. 이 샘플은 대표 사례를 확인하기 위한 것이며, 그룹 내부의 예외까지 평가하려면 나중에 무작위 샘플도 추가해야 합니다.
+
+```bash
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.label_samples data/youtube-watch-events.csv --k 10 --days 90 --per-cluster 20 --output data/cluster-label-samples-k10-days90.csv
+```
+
+개인 제목이 포함된 결과 파일은 `data/`에만 저장되며, 이미 존재하는 파일은 덮어쓰지 않습니다. `category_label`과 `review_note` 열은 처음에 비어 있습니다.
+
 Chrome 기록은 Python 코드에서 `read_chrome_navigation_events("/path/to/Takeout/Chrome")`로 읽을 수 있습니다. 이 함수는 `History.json`의 `Session → tab → navigation`만 처리하고, 시각을 UTC로 바꾼 뒤 과거순으로 정렬합니다. `Browser History`와 `Typed Url`은 아직 처리하지 않습니다. 세션 이동 기록은 전체 방문 기록이 아니며, 다른 Chrome Takeout 파일(주소·기기 설정 등)은 읽지 않습니다.
 
 ## 첫 클러스터링 실험
 
 ```bash
-.venv/bin/python -m openlens.cluster /path/to/youtube-takeout.zip --k 8 --days 90
+.venv/bin/python -m openlens.cluster data/youtube-watch-events.csv --k 8 --days 90
 ```
 
 `--k`는 실험할 그룹 수이며 8은 실행 예시일 뿐 확정된 카테고리 수가 아닙니다. EmbeddingGemma가 최근 90일의 고유 영상 제목을 클러스터링용 벡터로 바꾸고 K-Means가 그룹 번호를 붙입니다. 같은 영상의 반복 시청은 그룹을 만드는 데 중복 입력하지 않고, 결과의 시청 횟수에만 합산합니다. 그룹별 대표 제목은 사람이 임시로 해석해야 하며, 자동으로 붙인 주제 이름이 아닙니다. 결과는 터미널에만 출력되고 저장되지 않습니다. 대표 제목은 개인 시청 정보를 드러낼 수 있으니 출력 화면을 공유할 때 주의하세요.
@@ -72,7 +91,7 @@ Chrome 기록은 Python 코드에서 `read_chrome_navigation_events("/path/to/Ta
 ### 로컬 시각화
 
 ```bash
-.venv/bin/python -m openlens.visualize /path/to/youtube-takeout.zip --k 8 --days 90
+.venv/bin/python -m openlens.visualize data/youtube-watch-events.csv --k 8 --days 90
 ```
 
 이 명령은 `artifacts/clusters-k8-days90.html`에 오프라인 HTML 보고서를 만듭니다. 파일을 브라우저로 열면 클러스터별 고유 영상 수·시청 횟수 막대그래프와 제목별 점 분포도를 볼 수 있습니다. 점의 크기는 시청 횟수이고, 마우스를 올리면 제목이 나타납니다. 점의 위치는 K-Means에 사용한 동일한 임베딩 벡터를 표시용으로 2차원 PCA 투영한 것이므로 원래 고차원 거리와 정확히 같지는 않습니다. 보고서에는 개인 시청 제목이 포함되므로 `artifacts/`는 Git에서 제외합니다. 그룹을 직접 수정하는 기능은 아직 없습니다. 다른 `--k` 값으로 다시 실행해 별도 보고서를 비교할 수 있습니다.

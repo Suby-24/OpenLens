@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import csv
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 import json
@@ -13,8 +14,11 @@ from zipfile import ZipFile
 
 
 WATCH_HISTORY_SUFFIX = "YouTube and YouTube Music/history/watch-history.html"
+WATCH_HISTORY_KO_SUFFIX = "YouTube 및 YouTube Music/시청 기록/시청 기록.html"
 CHROME_HISTORY_SUFFIX = "Chrome/History.json"
 DATE_PATTERN = re.compile(r"[A-Z][a-z]{2} \d{1,2}, \d{4}, \d{1,2}:\d{2}:\d{2}\s*[AP]M GMT[+-]\d{2}:\d{2}")
+KO_DATE_PATTERN = re.compile(r"\d{4}\.\s*\d{1,2}\.\s*\d{1,2}\.\s*(?:오전|오후)\s*\d{1,2}:\d{2}:\d{2}\s*GMT[+-]\d{2}:\d{2}")
+WATCH_CSV_FIELDS = ("video_id", "title", "url", "watched_at")
 
 
 @dataclass(frozen=True)
@@ -104,23 +108,57 @@ class _WatchHistoryHTMLParser(HTMLParser):
         title = " ".join("".join(self.link_text).split())
         if not title:
             return
-        match = DATE_PATTERN.search("".join(self.parts).replace("\u202f", " ").replace("\xa0", " "))
-        if not match:
+        body = "".join(self.parts).replace("\u202f", " ").replace("\xa0", " ")
+        match = DATE_PATTERN.search(body)
+        ko_match = KO_DATE_PATTERN.search(body) if not match else None
+        if not match and not ko_match:
             return
-        watched_at = datetime.strptime(match.group().replace("GMT", ""), "%b %d, %Y, %I:%M:%S %p %z")
+        if match:
+            watched_at = datetime.strptime(match.group().replace("GMT", ""), "%b %d, %Y, %I:%M:%S %p %z")
+        else:
+            korean_date = ko_match.group().replace("오전", "AM").replace("오후", "PM").replace("GMT", "")
+            watched_at = datetime.strptime(korean_date, "%Y. %m. %d. %p %I:%M:%S %z")
         self.events.append(WatchEvent(video_id, title, self.link_url, watched_at))
 
 
 def read_watch_events(archive_path: str | Path) -> list[WatchEvent]:
-    """Return dated YouTube watch events without extracting files to disk."""
+    """Read a YouTube Takeout ZIP or a locally merged watch-events CSV."""
+    if Path(archive_path).suffix.lower() == ".csv":
+        with Path(archive_path).open(newline="", encoding="utf-8") as file:
+            reader = csv.DictReader(file)
+            if reader.fieldnames != list(WATCH_CSV_FIELDS):
+                raise ValueError("Watch CSV columns must be video_id,title,url,watched_at")
+            return [WatchEvent(row["video_id"], row["title"], row["url"], datetime.fromisoformat(row["watched_at"])) for row in reader]
     with ZipFile(archive_path) as archive:
-        matches = [name for name in archive.namelist() if name.endswith(WATCH_HISTORY_SUFFIX)]
+        matches = [name for name in archive.namelist() if name.endswith((WATCH_HISTORY_SUFFIX, WATCH_HISTORY_KO_SUFFIX))]
         if len(matches) != 1:
-            raise ValueError(f"Expected one watch-history.html, found {len(matches)}")
+            raise ValueError(f"Expected one watch-history.html or 시청 기록.html, found {len(matches)}")
         html = archive.read(matches[0]).decode("utf-8")
     parser = _WatchHistoryHTMLParser()
     parser.feed(html)
     return parser.events
+
+
+def merge_watch_events(*sources: str | Path) -> list[WatchEvent]:
+    """Combine exports, removing only repeated records of the same viewing."""
+    merged: dict[tuple[str, datetime], WatchEvent] = {}
+    for source in sources:
+        for event in read_watch_events(source):
+            key = (event.video_id, event.watched_at.astimezone(timezone.utc))
+            merged[key] = event
+    return sorted(merged.values(), key=lambda event: (event.watched_at, event.video_id))
+
+
+def write_watch_events_csv(events: list[WatchEvent], output: str | Path) -> Path:
+    """Save private training input as a UTF-8 CSV (keep it outside Git)."""
+    path = Path(output)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerow(WATCH_CSV_FIELDS)
+        for event in events:
+            writer.writerow((event.video_id, event.title, event.url, event.watched_at.isoformat()))
+    return path
 
 
 def read_chrome_navigation_events(path: str | Path) -> list[ChromeNavigationEvent]:
