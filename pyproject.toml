@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "A local ML project for exploring personal information consumption patterns"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["scikit-learn>=1.5,<2"]
+dependencies = ["scikit-learn>=1.5,<2", "plotly>=6,<8", "sentence-transformers>=5"]
 
 [project.scripts]
 openlens = "openlens.cli:main"

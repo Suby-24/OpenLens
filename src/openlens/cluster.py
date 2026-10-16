@@ -1,17 +1,39 @@
-"""First experiment: cluster unique YouTube titles with TF-IDF and K-Means."""
+"""Cluster unique YouTube titles with EmbeddingGemma and K-Means."""
 
 from __future__ import annotations
 
 import argparse
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import numpy as np
 from sklearn.cluster import KMeans
-from sklearn.feature_extraction.text import TfidfVectorizer
 
 from .takeout import WatchEvent, read_watch_events
+
+EMBEDDING_MODEL = "google/embeddinggemma-300m"
+
+
+def embed_titles(titles: list[str]) -> np.ndarray:
+    """Encode titles locally with EmbeddingGemma's clustering prompt."""
+    from sentence_transformers import SentenceTransformer
+
+    model = SentenceTransformer(EMBEDDING_MODEL)
+    vectors = np.asarray(
+        model.encode(
+            titles,
+            prompt_name="Clustering",
+            normalize_embeddings=True,
+            convert_to_numpy=True,
+        )
+    )
+    if vectors.ndim != 2 or vectors.shape[0] != len(titles):
+        raise ValueError("Embedding model returned an unexpected vector shape")
+    if not np.isfinite(vectors).all() or np.any(np.linalg.norm(vectors, axis=1) == 0):
+        raise ValueError("Embedding model returned invalid vectors")
+    return vectors
 
 
 @dataclass(frozen=True)
@@ -27,7 +49,6 @@ class ClusterSummary:
     cluster_id: int
     unique_videos: int
     watch_events: int
-    top_terms: tuple[str, ...]
     representative_titles: tuple[str, ...]
 
 
@@ -38,6 +59,7 @@ class ClusteringResult:
     total_watch_events: int
     videos: tuple[ClusteredVideo, ...]
     clusters: tuple[ClusterSummary, ...]
+    embedding_vectors: np.ndarray = field(repr=False, compare=False)
 
 
 def cluster_watch_events(
@@ -46,8 +68,8 @@ def cluster_watch_events(
     """Cluster each video once; count every watch only in consumption totals.
 
     The look-back window ends at the newest event in the supplied Takeout file.
-    TF-IDF uses scikit-learn's default word tokenizer; no Korean-specific
-    morphology or automatic cluster naming is applied in this baseline.
+    EmbeddingGemma encodes each unique title once. Clusters have no automatic
+    category names; the embedding vectors are retained for the 2D report.
     """
     if k < 2:
         raise ValueError("k must be at least 2")
@@ -71,13 +93,7 @@ def cluster_watch_events(
     if len(set(titles)) < k:
         raise ValueError("k cannot exceed the number of distinct video titles")
 
-    vectorizer = TfidfVectorizer()
-    try:
-        matrix = vectorizer.fit_transform(titles)
-    except ValueError as exc:
-        raise ValueError("Titles contain no words recognized by default TF-IDF") from exc
-    if (matrix.getnnz(axis=1) == 0).any():
-        raise ValueError("Some titles have no words recognized by default TF-IDF")
+    matrix = embed_titles(titles)
 
     model = KMeans(n_clusters=k, random_state=42, n_init=10)
     labels = model.fit_predict(matrix)
@@ -89,19 +105,16 @@ def cluster_watch_events(
         for video_id, title, label in zip(video_ids, titles, labels)
     )
 
-    terms = vectorizer.get_feature_names_out()
     distances = model.transform(matrix)
     clusters = []
     for cluster_id in range(k):
         members = [index for index, label in enumerate(labels) if label == cluster_id]
         nearest = sorted(members, key=lambda index: distances[index, cluster_id])[:3]
-        top_indices = model.cluster_centers_[cluster_id].argsort()[::-1][:8]
         clusters.append(
             ClusterSummary(
                 cluster_id=cluster_id,
                 unique_videos=len(members),
                 watch_events=sum(videos[index].watch_count for index in members),
-                top_terms=tuple(str(terms[index]) for index in top_indices),
                 representative_titles=tuple(titles[index] for index in nearest),
             )
         )
@@ -112,6 +125,7 @@ def cluster_watch_events(
         total_watch_events=len(recent),
         videos=videos,
         clusters=tuple(clusters),
+        embedding_vectors=matrix,
     )
 
 
@@ -134,7 +148,6 @@ def main() -> None:
             f"\n클러스터 {cluster.cluster_id}: "
             f"고유 영상 {cluster.unique_videos:,}개, 시청 {cluster.watch_events:,}회"
         )
-        print(f"  주요 단어: {', '.join(cluster.top_terms)}")
         for title in cluster.representative_titles:
             print(f"  대표 제목: {title}")
 

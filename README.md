@@ -2,7 +2,7 @@
 
 OpenLens는 내가 소비한 콘텐츠를 바탕으로 관심사와 정보 소비 패턴을 살펴보는 개인용 ML 프로젝트입니다. 웹 방문 기록과 YouTube 시청 기록에서 주제를 찾고, 한 주제 안에서 반복해서 접하는 논점과 시간에 따른 변화를 분석하는 것을 목표로 합니다.
 
-현재 상태: **YouTube·Chrome 기록 읽기와 YouTube 제목의 첫 TF-IDF + K-Means 실험 구현**.
+현재 상태: **YouTube·Chrome 기록 읽기와 YouTube 제목의 EmbeddingGemma + K-Means 실험 구현**.
 
 ## 첫 완성본의 범위
 
@@ -35,7 +35,7 @@ LLM은 선택적으로 클러스터 이름과 주장 후보를 제안할 수 있
              → 사용자 확인 → 기간별 분석 → 로컬 대시보드
 ```
 
-첫 실험은 YouTube 시청 기록 100~300건으로 시작합니다. 제목을 정제하고, TF-IDF와 클러스터링으로 어떤 그룹이 나타나는지 확인합니다. 사람이 직접 확인한 약 50건은 초기 평가 자료로 사용합니다. 이 수치는 데이터 확보 상황에 따라 조정합니다.
+첫 실험은 YouTube 시청 기록 100~300건으로 시작합니다. 제목을 정제하고, EmbeddingGemma 임베딩과 클러스터링으로 어떤 그룹이 나타나는지 확인합니다. 사람이 직접 확인한 약 50건은 초기 평가 자료로 사용합니다. 이 수치는 데이터 확보 상황에 따라 조정합니다.
 
 ## 저장소 구조
 
@@ -50,8 +50,9 @@ models/           학습 결과물(추적하지 않음)
 YouTube Google Takeout ZIP을 압축 해제하지 않고 읽어 기간별 이벤트 수를 확인할 수 있습니다.
 
 ```bash
-python3 -m pip install -e .
-openlens /path/to/takeout.zip --days 90
+python3 -m venv .venv
+.venv/bin/python -m pip install -e .
+.venv/bin/openlens /path/to/takeout.zip --days 90
 ```
 
 원본 ZIP을 저장소 안에 복사하거나 GitHub에 올리지 마세요. 이 명령은 영상 제목이나 URL을 출력하지 않으며, 분석 결과를 파일로 저장하지도 않습니다. 현재 파서는 YouTube의 HTML 시청 기록 형식을 지원합니다.
@@ -61,10 +62,20 @@ Chrome 기록은 Python 코드에서 `read_chrome_navigation_events("/path/to/Ta
 ## 첫 클러스터링 실험
 
 ```bash
-python3 -m openlens.cluster /path/to/youtube-takeout.zip --k 8 --days 90
+.venv/bin/python -m openlens.cluster /path/to/youtube-takeout.zip --k 8 --days 90
 ```
 
-`--k`는 실험할 그룹 수이며 8은 실행 예시일 뿐 확정된 카테고리 수가 아닙니다. 기본 TF-IDF가 최근 90일의 고유 영상 제목을 숫자로 바꾸고 K-Means가 그룹 번호를 붙입니다. 같은 영상의 반복 시청은 그룹을 만드는 데 중복 입력하지 않고, 결과의 시청 횟수에만 합산합니다. 그룹별 주요 단어와 대표 제목은 사람이 임시로 해석해야 하며, 자동으로 붙인 주제 이름이 아닙니다. 결과는 터미널에만 출력되고 저장되지 않습니다. 대표 제목은 개인 시청 정보를 드러낼 수 있으니 출력 화면을 공유할 때 주의하세요.
+`--k`는 실험할 그룹 수이며 8은 실행 예시일 뿐 확정된 카테고리 수가 아닙니다. EmbeddingGemma가 최근 90일의 고유 영상 제목을 클러스터링용 벡터로 바꾸고 K-Means가 그룹 번호를 붙입니다. 같은 영상의 반복 시청은 그룹을 만드는 데 중복 입력하지 않고, 결과의 시청 횟수에만 합산합니다. 그룹별 대표 제목은 사람이 임시로 해석해야 하며, 자동으로 붙인 주제 이름이 아닙니다. 결과는 터미널에만 출력되고 저장되지 않습니다. 대표 제목은 개인 시청 정보를 드러낼 수 있으니 출력 화면을 공유할 때 주의하세요.
+
+모델 `google/embeddinggemma-300m`을 처음 사용할 때는 Hugging Face 계정에서 [Gemma 이용 약관](https://huggingface.co/google/embeddinggemma-300m)에 동의하고 로컬 환경에서 인증해야 합니다. 최초 실행 시 모델 파일을 다운로드하며, 이후 제목 임베딩은 로컬에서 계산합니다. 모델은 `float16` 활성값을 지원하지 않으므로 기본 `float32` 설정을 사용합니다.
+
+### 로컬 시각화
+
+```bash
+.venv/bin/python -m openlens.visualize /path/to/youtube-takeout.zip --k 8 --days 90
+```
+
+이 명령은 `artifacts/clusters-k8-days90.html`에 오프라인 HTML 보고서를 만듭니다. 파일을 브라우저로 열면 클러스터별 고유 영상 수·시청 횟수 막대그래프와 제목별 점 분포도를 볼 수 있습니다. 점의 크기는 시청 횟수이고, 마우스를 올리면 제목이 나타납니다. 점의 위치는 K-Means에 사용한 동일한 임베딩 벡터를 표시용으로 2차원 PCA 투영한 것이므로 원래 고차원 거리와 정확히 같지는 않습니다. 보고서에는 개인 시청 제목이 포함되므로 `artifacts/`는 Git에서 제외합니다. 그룹을 직접 수정하는 기능은 아직 없습니다. 다른 `--k` 값으로 다시 실행해 별도 보고서를 비교할 수 있습니다.
 
 ## 개인정보와 GitHub
 
