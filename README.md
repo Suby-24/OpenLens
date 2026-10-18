@@ -76,6 +76,38 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.label_sampl
 
 개인 제목이 포함된 결과 파일은 `data/`에만 저장되며, 이미 존재하는 파일은 덮어쓰지 않습니다. `category_label`과 `review_note` 열은 처음에 비어 있습니다.
 
+### 외부 학습 후보와 개인 프로필 분리
+
+부족한 주제의 공개 YouTube 검색 결과를 별도 CSV로 모을 수 있습니다.
+
+```bash
+.venv/bin/python -m openlens.external_candidates --output data/external-category-candidates.csv --target 50
+```
+
+검색어로 제안한 카테고리는 `label_status=proposed`로 표시됩니다. 영상을 확인해 정답을 확정했다면 해당 행만 `verified`로 바꾸세요. 기본 분류 명령은 `verified` 외부 행만 학습에 사용합니다. 검증 전 후보도 실험에 사용하려면 `--allow-proposed-external`을 명시해야 합니다.
+
+```bash
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.classify data/youtube-watch-events.csv data/cluster-label-samples-k10-days90.csv --external-labels data/external-category-candidates.csv --output data/category-predictions-external-verified.csv
+```
+
+외부 CSV는 학습 제목과 레이블로만 사용됩니다. 예측 결과와 시청 횟수는 통합된 **개인 시청 기록**에서만 생성되므로, 외부 영상을 개인 관심사·프로필 소비량에 포함하지 않습니다. 외부 검색 결과는 카테고리 정답을 보증하지 않습니다.
+
+개인 검증 레이블과 외부 후보를 **하나의 학습 CSV**로 합칠 수도 있습니다. 원본 두 파일은 그대로 두며, 새 파일의 `source`와 `label_status` 열로 출처와 검증 여부를 구분합니다.
+
+```bash
+.venv/bin/python -m openlens.training_data data/cluster-label-samples-k10-days90.csv data/external-category-candidates.csv --output data/training-with-external.csv
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.classify data/youtube-watch-events.csv --training-data data/training-with-external.csv --allow-proposed-external --output data/category-predictions-combined.csv
+```
+
+두 번째 명령의 `--allow-proposed-external`은 검증되지 않은 외부 후보까지 학습하는 실험용 옵션입니다. 외부 행을 직접 확인해 `label_status`를 `verified`로 바꾼 뒤에는 해당 옵션 없이 실행할 수 있습니다. 이 학습 CSV는 프로필 데이터 원본이 아닙니다.
+
+외부 후보 전체를 사람이 검증했다면 원본 파일을 유지하면서 검증 완료 사본을 만들 수 있습니다.
+
+```bash
+.venv/bin/python -m openlens.training_data data/cluster-label-samples-k10-days90.csv data/external-category-candidates.csv --verify-external --output data/training-with-external-verified.csv
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.classify data/youtube-watch-events.csv --training-data data/training-with-external-verified.csv --output data/category-predictions-verified.csv
+```
+
 Chrome 기록은 Python 코드에서 `read_chrome_navigation_events("/path/to/Takeout/Chrome")`로 읽을 수 있습니다. 이 함수는 `History.json`의 `Session → tab → navigation`만 처리하고, 시각을 UTC로 바꾼 뒤 과거순으로 정렬합니다. `Browser History`와 `Typed Url`은 아직 처리하지 않습니다. 세션 이동 기록은 전체 방문 기록이 아니며, 다른 Chrome Takeout 파일(주소·기기 설정 등)은 읽지 않습니다.
 
 ## 첫 클러스터링 실험
