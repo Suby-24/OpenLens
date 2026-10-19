@@ -63,7 +63,7 @@ class ClusteringResult:
 
 
 def cluster_watch_events(
-    events: list[WatchEvent], *, k: int, days: int = 90
+    events: list[WatchEvent], *, k: int = 11, days: int = 90
 ) -> ClusteringResult:
     """Cluster each video once; count every watch only in consumption totals.
 
@@ -132,7 +132,7 @@ def cluster_watch_events(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Cluster local YouTube Takeout titles")
     parser.add_argument("archive", type=Path, help="YouTube Takeout ZIP or merged CSV path")
-    parser.add_argument("--k", type=int, required=True, help="Number of clusters to test")
+    parser.add_argument("--k", type=int, default=11, help="Number of clusters (default: 11)")
     parser.add_argument("--days", type=int, default=90, help="Look-back days (default: 90)")
     args = parser.parse_args()
 

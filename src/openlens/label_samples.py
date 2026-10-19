@@ -65,7 +65,7 @@ def write_label_samples(samples: list[LabelSample], output: Path) -> Path:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Sample clustered videos for manual labeling")
     parser.add_argument("source", type=Path, help="Merged YouTube watch-events CSV or Takeout ZIP")
-    parser.add_argument("--k", type=int, default=10)
+    parser.add_argument("--k", type=int, default=11)
     parser.add_argument("--days", type=int, default=90)
     parser.add_argument("--per-cluster", type=int, default=20)
     parser.add_argument("--output", type=Path, required=True)
