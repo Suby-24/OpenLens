@@ -1,6 +1,12 @@
 # OpenLens
 
-OpenLens는 내가 소비한 콘텐츠를 바탕으로 관심사와 정보 소비 패턴을 살펴보는 개인용 ML 프로젝트입니다. 웹 방문 기록과 YouTube 시청 기록에서 주제를 찾고, 한 주제 안에서 반복해서 접하는 논점과 시간에 따른 변화를 분석하는 것을 목표로 합니다.
+OpenLens는 일상적으로 접하는 콘텐츠 속에서 스스로도 의식하지 못한 취향과 관심사를 발견하고, 자신이 세상을 바라보는 방식을 돌아보기 위한 개인용 머신러닝 프로젝트입니다. 단순히 시청 기록을 주제별로 나누는 데 그치지 않고, 어떤 이야기와 관점을 반복해서 접해 왔는지, 무엇을 거의 접하지 않았는지를 살펴봅니다. 궁극적으로는 자신의 정보 소비에 숨어 있는 편향(bias)을 마주하고, 다른 시야를 발견하는 도구를 지향합니다.
+
+## 개발 동기
+
+추천 알고리즘이 보여 주는 콘텐츠를 오래 따라가다 보면 관심사는 더 선명해지지만, 다른 생각을 만날 기회는 줄어들 수 있습니다. 내가 선택한 관심사인지, 반복해서 노출된 결과인지 궁금해진 것이 이 프로젝트의 출발점입니다. 평소에는 알아차리지 못했던 관심사를 데이터에서 찾아내고, 특정 주제나 단체·활동에 시간을 쏟는 동안 다른 의견이나 활동은 얼마나 접했는지 확인하고 싶었습니다.
+
+OpenLens는 개인의 웹·YouTube 이용 기록을 바탕으로 관심사의 구성과 시간에 따른 변화를 살펴보고, 한 주제 안에서 접한 관점의 쏠림과 비어 있는 영역을 드러내려 합니다. 콘텐츠를 소비했다는 사실만으로 그 사람의 신념을 단정하지 않으며, 결과를 스스로 검토하고 수정할 수 있는 방향으로 개발합니다. 실제로 사용할 수 있는 도구를 만들면서 임베딩, 클러스터링, 분류 모델을 직접 실험하고 배우는 것 역시 중요한 목적입니다.
 
 현재 상태: **YouTube·Chrome 기록 읽기와 YouTube 제목의 EmbeddingGemma + K-Means 실험 구현**.
 
@@ -55,20 +61,20 @@ python3 -m venv .venv
 .venv/bin/openlens /path/to/takeout.zip --days 90
 ```
 
-원본 ZIP을 저장소 안에 복사하거나 GitHub에 올리지 마세요. 이 명령은 영상 제목이나 URL을 출력하지 않으며, 분석 결과를 파일로 저장하지도 않습니다. 현재 파서는 YouTube의 HTML 시청 기록 형식을 지원합니다.
+원본 ZIP은 저장소 안에 복사하거나 GitHub에 올리지 않습니다. 이 명령은 영상 제목이나 URL을 출력하지 않으며, 분석 결과를 파일로 저장하지도 않습니다. 현재 파서는 YouTube의 HTML 시청 기록 형식을 지원합니다.
 
-여러 YouTube Takeout 내보내기를 하나로 합칠 때는 아래처럼 실행합니다. 영어·한국어 시청 기록 HTML을 읽고, 동일 영상 ID와 시청 시각이 모두 같은 이벤트만 중복으로 제거합니다. 같은 영상을 다른 시각에 반복 시청했다면 별도 이벤트로 유지합니다. 결과 CSV의 열은 `video_id,title,url,watched_at`이며, 시각은 UTC 오프셋이 포함된 ISO 8601 형식입니다. CSV는 시청 시각순으로 저장됩니다.
+여러 YouTube Takeout 내보내기를 하나로 합칠 때는 아래 명령을 사용합니다. 영어·한국어 시청 기록 HTML을 읽고, 동일 영상 ID와 시청 시각이 모두 같은 이벤트만 중복으로 제거합니다. 같은 영상을 다른 시각에 반복 시청했다면 별도 이벤트로 유지합니다. 결과 CSV의 열은 `video_id,title,url,watched_at`이며, 시각은 UTC 오프셋이 포함된 ISO 8601 형식입니다. CSV는 시청 시각순으로 저장됩니다.
 
 ```bash
 .venv/bin/python -m openlens.merge /path/to/older.zip /path/to/newer.zip --output data/youtube-watch-events.csv
 .venv/bin/openlens data/youtube-watch-events.csv --days 90
 ```
 
-`data/`는 Git에서 제외되지만 CSV에 개인 시청 제목과 URL이 들어 있으므로 공유하지 마세요. 이후 클러스터링과 시각화 명령에도 ZIP 대신 이 CSV를 입력할 수 있습니다. 이 CSV는 분류 모델의 입력 데이터이며, 사람이 붙일 카테고리 레이블은 아직 포함하지 않습니다.
+`data/`는 Git에서 제외되지만 CSV에 개인 시청 제목과 URL이 들어 있으므로 공유하지 않습니다. 이후 클러스터링과 시각화 명령에도 ZIP 대신 이 CSV를 입력할 수 있습니다. 이 CSV는 분류 모델의 입력 데이터이며, 사람이 붙일 카테고리 레이블은 아직 포함하지 않습니다.
 
 ### 클러스터별 레이블링 샘플
 
-통합 CSV를 클러스터링한 뒤 각 그룹에서 중심에 가장 가까운 영상 20개씩 뽑아 별도 CSV를 만들 수 있습니다. `rank=1`이 그룹 중심에 가장 가까운 영상입니다. 이 파일의 `category_label` 열에 영상별 상위 카테고리를 직접 입력하세요. 같은 클러스터라고 모두 같은 카테고리로 자동 지정하지 않습니다. 이 샘플은 대표 사례를 확인하기 위한 것이며, 그룹 내부의 예외까지 평가하려면 나중에 무작위 샘플도 추가해야 합니다.
+통합 CSV를 클러스터링한 뒤 각 그룹에서 중심에 가장 가까운 영상 20개씩 뽑아 별도 CSV를 만들 수 있습니다. `rank=1`이 그룹 중심에 가장 가까운 영상입니다. 이 파일의 `category_label` 열에 영상별 상위 카테고리를 직접 입력합니다. 같은 클러스터라고 모두 같은 카테고리로 자동 지정하지 않습니다. 이 샘플은 대표 사례를 확인하기 위한 것이며, 그룹 내부의 예외까지 평가하려면 나중에 무작위 샘플도 추가해야 합니다.
 
 ```bash
 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.label_samples data/youtube-watch-events.csv --k 11 --days 90 --per-cluster 20 --output data/cluster-label-samples-k11-days90.csv
@@ -84,7 +90,7 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.label_sampl
 .venv/bin/python -m openlens.external_candidates --output data/external-category-candidates.csv --target 50
 ```
 
-검색어로 제안한 카테고리는 `label_status=proposed`로 표시됩니다. 영상을 확인해 정답을 확정했다면 해당 행만 `verified`로 바꾸세요. 기본 분류 명령은 `verified` 외부 행만 학습에 사용합니다. 검증 전 후보도 실험에 사용하려면 `--allow-proposed-external`을 명시해야 합니다.
+검색어로 제안한 카테고리는 `label_status=proposed`로 표시됩니다. 영상을 확인해 정답을 확정했다면 해당 행만 `verified`로 바꿉니다. 기본 분류 명령은 `verified` 외부 행만 학습에 사용합니다. 검증 전 후보도 실험에 사용하려면 `--allow-proposed-external`을 명시해야 합니다.
 
 ```bash
 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.classify data/youtube-watch-events.csv data/cluster-label-samples-k10-days90.csv --external-labels data/external-category-candidates.csv --output data/category-predictions-external-verified.csv
@@ -116,7 +122,7 @@ Chrome 기록은 Python 코드에서 `read_chrome_navigation_events("/path/to/Ta
 .venv/bin/python -m openlens.cluster data/youtube-watch-events.csv --k 11 --days 90
 ```
 
-`--k`는 실험할 그룹 수이며 기본값은 11입니다. 이는 확정된 카테고리 수가 아니라 비교 실험에서 선택한 값입니다. EmbeddingGemma가 최근 90일의 고유 영상 제목을 클러스터링용 벡터로 바꾸고 K-Means가 그룹 번호를 붙입니다. 같은 영상의 반복 시청은 그룹을 만드는 데 중복 입력하지 않고, 결과의 시청 횟수에만 합산합니다. 그룹별 대표 제목은 사람이 임시로 해석해야 하며, 자동으로 붙인 주제 이름이 아닙니다. 결과는 터미널에만 출력되고 저장되지 않습니다. 대표 제목은 개인 시청 정보를 드러낼 수 있으니 출력 화면을 공유할 때 주의하세요.
+`--k`는 실험할 그룹 수이며 기본값은 11입니다. 이는 확정된 카테고리 수가 아니라 비교 실험에서 선택한 값입니다. EmbeddingGemma가 최근 90일의 고유 영상 제목을 클러스터링용 벡터로 바꾸고 K-Means가 그룹 번호를 붙입니다. 같은 영상의 반복 시청은 그룹을 만드는 데 중복 입력하지 않고, 결과의 시청 횟수에만 합산합니다. 그룹별 대표 제목은 사람이 임시로 해석해야 하며, 자동으로 붙인 주제 이름이 아닙니다. 결과는 터미널에만 출력되고 저장되지 않습니다. 대표 제목은 개인 시청 정보를 드러낼 수 있으므로 출력 화면 공유에 주의합니다.
 
 모델 `google/embeddinggemma-300m`을 처음 사용할 때는 Hugging Face 계정에서 [Gemma 이용 약관](https://huggingface.co/google/embeddinggemma-300m)에 동의하고 로컬 환경에서 인증해야 합니다. 최초 실행 시 모델 파일을 다운로드하며, 이후 제목 임베딩은 로컬에서 계산합니다. 모델은 `float16` 활성값을 지원하지 않으므로 기본 `float32` 설정을 사용합니다.
 
@@ -130,7 +136,7 @@ Chrome 기록은 Python 코드에서 `read_chrome_navigation_events("/path/to/Ta
 
 ## 개인정보와 GitHub
 
-방문 기록, 시청 기록, 개인 프로필, 토큰, 학습된 개인 모델은 로컬에 보관합니다. 이 저장소에는 코드, 설계 문서, 실험 설정·집계 결과 및 개인정보가 없는 예시만 올립니다. Git에 추가하기 전에 `git status`와 변경 내용을 확인하세요. 자세한 기준은 [데이터 취급 원칙](docs/data-policy.md)을 참고하세요.
+방문 기록, 시청 기록, 개인 프로필, 토큰, 학습된 개인 모델은 로컬에 보관합니다. 이 저장소에는 코드, 설계 문서, 실험 설정·집계 결과 및 개인정보가 없는 예시만 올립니다. Git에 추가하기 전에는 `git status`와 변경 내용을 확인합니다. 자세한 기준은 [데이터 취급 원칙](docs/data-policy.md)을 참고합니다.
 
 ## 로드맵
 
