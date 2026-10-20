@@ -18,6 +18,7 @@ EMBEDDING_MODEL = "google/embeddinggemma-300m"
 
 def embed_titles(titles: list[str]) -> np.ndarray:
     """Encode titles locally with EmbeddingGemma's clustering prompt."""
+    # Load the embedding model and turn each title into a normalized vector.
     from sentence_transformers import SentenceTransformer
 
     model = SentenceTransformer(EMBEDDING_MODEL)
@@ -82,6 +83,7 @@ def cluster_watch_events(
     window_start = window_end - timedelta(days=days)
     recent = [event for event in events if event.watched_at >= window_start]
 
+    # Count repeated watches, but keep one title per video for clustering.
     watch_counts = Counter(event.video_id for event in recent)
     # Sorting makes the input order reproducible even if Takeout changes order.
     latest_title = {
@@ -95,6 +97,7 @@ def cluster_watch_events(
 
     matrix = embed_titles(titles)
 
+    # Assign every unique video to one of the requested K-Means clusters.
     model = KMeans(n_clusters=k, random_state=42, n_init=10)
     labels = model.fit_predict(matrix)
     if len(set(labels)) != k:
@@ -107,6 +110,7 @@ def cluster_watch_events(
 
     distances = model.transform(matrix)
     clusters = []
+    # Summarize each cluster and pick titles closest to its center.
     for cluster_id in range(k):
         members = [index for index, label in enumerate(labels) if label == cluster_id]
         nearest = sorted(members, key=lambda index: distances[index, cluster_id])[:3]

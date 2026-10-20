@@ -26,6 +26,7 @@ QUERIES = {
 
 
 def _videos(query: str) -> list[tuple[str, str]]:
+    # Fetch one public search page and extract video titles and IDs.
     url = "https://www.youtube.com/results?" + urlencode({"search_query": query})
     page = subprocess.run(
         ["curl", "-fsSL", "--max-time", "25", "-A", "Mozilla/5.0", url],
@@ -38,6 +39,7 @@ def _videos(query: str) -> list[tuple[str, str]]:
     found: list[tuple[str, str]] = []
 
     def visit(value: object) -> None:
+        # Search nested page data for video result objects.
         if isinstance(value, dict):
             video = value.get("videoRenderer")
             if isinstance(video, dict):
@@ -56,6 +58,7 @@ def _videos(query: str) -> list[tuple[str, str]]:
 
 
 def collect(output: Path, *, target: int = 50) -> dict[str, int]:
+    # Gather unique examples per category as unverified label candidates.
     if target < 1:
         raise ValueError("target must be positive")
     rows: list[tuple[str, str, str, str, str, str]] = []
@@ -75,6 +78,7 @@ def collect(output: Path, *, target: int = 50) -> dict[str, int]:
                 break
         counts[category] = count
     output.parent.mkdir(parents=True, exist_ok=True)
+    # Save candidates for manual verification before normal training.
     with output.open("x", newline="", encoding="utf-8-sig") as file:
         writer = csv.writer(file)
         writer.writerow(("video_id", "title", "video_url", "category_label", "label_status", "source_query"))

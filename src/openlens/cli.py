@@ -10,6 +10,7 @@ from .takeout import read_watch_events
 
 
 def main() -> None:
+    # Read the selected Takeout source and validate the look-back window.
     parser = argparse.ArgumentParser(prog="openlens")
     parser.add_argument("archive", help="Path to a YouTube Takeout ZIP or merged CSV file")
     parser.add_argument("--days", type=int, default=90, help="Look-back window (default: 90)")
@@ -23,6 +24,7 @@ def main() -> None:
         return
     latest = max(event.watched_at for event in events)
     recent = [event for event in events if event.watched_at >= latest - timedelta(days=args.days)]
+    # Print aggregate counts only, without exposing video titles or URLs.
     print(f"전체 시청 이벤트: {len(events):,}건")
     print(f"전체 고유 영상: {len({event.video_id for event in events}):,}개")
     print(f"기록 기간: {min(event.watched_at for event in events).date()} ~ {latest.date()}")

@@ -11,6 +11,7 @@ FIELDS = ("video_id", "title", "category_label", "source", "label_status", "vide
 
 
 def build_training_data(personal: Path, external: Path, output: Path, *, verify_external: bool = False) -> dict[str, int]:
+    # Collect reviewed personal labels first and prevent duplicate video IDs.
     rows: list[tuple[str, ...]] = []
     seen: set[str] = set()
     with personal.open(newline="", encoding="utf-8-sig") as file:
@@ -27,6 +28,7 @@ def build_training_data(personal: Path, external: Path, output: Path, *, verify_
             rows.append((video_id, title, label, "personal", "verified",
                          f"https://www.youtube.com/watch?v={video_id}"))
     personal_count = len(rows)
+    # Add external examples while preserving their review status and origin.
     with external.open(newline="", encoding="utf-8-sig") as file:
         reader = csv.DictReader(file)
         if not reader.fieldnames or not {"video_id", "title", "category_label", "label_status"} <= set(reader.fieldnames):
@@ -43,6 +45,7 @@ def build_training_data(personal: Path, external: Path, output: Path, *, verify_
             seen.add(video_id)
             rows.append((video_id, title, label, "external", status,
                          f"https://www.youtube.com/watch?v={video_id}"))
+    # Write a new source-aware training file without changing either input.
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("x", newline="", encoding="utf-8-sig") as file:
         writer = csv.writer(file)

@@ -25,6 +25,7 @@ class LabelSample:
 
 def select_label_samples(result: ClusteringResult, *, per_cluster: int = 20) -> list[LabelSample]:
     """Take the nearest videos to each cluster's centroid, with stable tie-breaking."""
+    # Rank videos by distance to their cluster center for human review.
     if per_cluster < 1:
         raise ValueError("per_cluster must be positive")
     samples: list[LabelSample] = []
@@ -51,6 +52,7 @@ def select_label_samples(result: ClusteringResult, *, per_cluster: int = 20) -> 
 
 def write_label_samples(samples: list[LabelSample], output: Path) -> Path:
     """Create (never overwrite) a CSV with blank labels for manual review."""
+    # Leave category and note fields empty for a reviewer to fill in.
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("x", newline="", encoding="utf-8-sig") as file:
         writer = csv.writer(file)

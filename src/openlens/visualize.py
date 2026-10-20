@@ -23,10 +23,12 @@ def project_titles(result: ClusteringResult) -> list[tuple[float, float]]:
 
 def write_cluster_report(result: ClusteringResult, output: Path) -> Path:
     """Save an offline HTML report; the file contains private video titles."""
+    # Project cluster embeddings once so every video shares the same 2D axes.
     coordinates = project_titles(result)
     palette = qualitative.Plotly
 
     scatter = go.Figure()
+    # Plot each video with its cluster color and watch-count-based size.
     for cluster in result.clusters:
         members = [
             (video, coordinates[index])
@@ -64,6 +66,7 @@ def write_cluster_report(result: ClusteringResult, output: Path) -> Path:
     )
 
     labels = [f"그룹 {cluster.cluster_id}" for cluster in result.clusters]
+    # Compare unique videos with total watches for each cluster.
     bars = go.Figure()
     bars.add_trace(
         go.Bar(name="고유 영상", x=labels, y=[c.unique_videos for c in result.clusters])
@@ -81,6 +84,7 @@ def write_cluster_report(result: ClusteringResult, output: Path) -> Path:
 
     scatter_html = scatter.to_html(full_html=False, include_plotlyjs=True)
     bars_html = bars.to_html(full_html=False, include_plotlyjs=False)
+    # Bundle both charts into one offline HTML report.
     document = f"""<!doctype html>
 <html lang="ko">
 <head>

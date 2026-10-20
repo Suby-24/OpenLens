@@ -9,6 +9,7 @@ from .takeout import merge_watch_events, write_watch_events_csv
 
 
 def main() -> None:
+    # Combine supplied exports into a new local CSV while preserving repeat watches.
     parser = argparse.ArgumentParser(description="Merge YouTube Takeout watch histories locally")
     parser.add_argument("sources", nargs="+", type=Path, help="YouTube Takeout ZIP or merged CSV files")
     parser.add_argument("--output", required=True, type=Path, help="Private merged CSV path")

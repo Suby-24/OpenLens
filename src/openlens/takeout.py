@@ -40,6 +40,7 @@ class ChromeNavigationEvent:
 
 
 def _video_id(url: str) -> str | None:
+    # Extract a stable ID from supported YouTube URL formats.
     parsed = urlparse(url)
     host = parsed.netloc.lower().removeprefix("www.")
     if host == "youtube.com" and parsed.path == "/watch":
@@ -54,6 +55,7 @@ def _video_id(url: str) -> str | None:
 class _WatchHistoryHTMLParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
+        # Track nested HTML elements while assembling one watch-history entry.
         self.depth = 0
         self.outer_depth: int | None = None
         self.content_depth: int | None = None
@@ -64,6 +66,7 @@ class _WatchHistoryHTMLParser(HTMLParser):
         self.events: list[WatchEvent] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        # Locate each watch entry and capture its first video link.
         attrs_dict = dict(attrs)
         if tag == "div":
             self.depth += 1
@@ -83,6 +86,7 @@ class _WatchHistoryHTMLParser(HTMLParser):
             self.parts.append("\n")
 
     def handle_endtag(self, tag: str) -> None:
+        # Finish an entry when its outer container closes.
         if tag == "a":
             self.link_depth = None
         elif tag == "div":
@@ -100,6 +104,7 @@ class _WatchHistoryHTMLParser(HTMLParser):
                 self.link_text.append(data)
 
     def _finish_entry(self) -> None:
+        # Convert the captured title, URL, and timestamp into a watch event.
         if not self.link_url:
             return
         video_id = _video_id(self.link_url)
@@ -123,6 +128,7 @@ class _WatchHistoryHTMLParser(HTMLParser):
 
 def read_watch_events(archive_path: str | Path) -> list[WatchEvent]:
     """Read a YouTube Takeout ZIP or a locally merged watch-events CSV."""
+    # CSV inputs are already normalized; ZIP inputs need HTML parsing.
     if Path(archive_path).suffix.lower() == ".csv":
         with Path(archive_path).open(newline="", encoding="utf-8") as file:
             reader = csv.DictReader(file)
@@ -141,6 +147,7 @@ def read_watch_events(archive_path: str | Path) -> list[WatchEvent]:
 
 def merge_watch_events(*sources: str | Path) -> list[WatchEvent]:
     """Combine exports, removing only repeated records of the same viewing."""
+    # A video watched at a different time remains a separate event.
     merged: dict[tuple[str, datetime], WatchEvent] = {}
     for source in sources:
         for event in read_watch_events(source):
@@ -168,6 +175,7 @@ def read_chrome_navigation_events(path: str | Path) -> list[ChromeNavigationEven
     sensitive information and are intentionally ignored. The returned records
     are sorted oldest first; they are not a complete browser-history export.
     """
+    # Read only History.json, whether the input is a folder, ZIP, or JSON file.
     source = Path(path)
     if source.is_dir():
         raw = (source / "History.json").read_text(encoding="utf-8")
@@ -185,6 +193,7 @@ def read_chrome_navigation_events(path: str | Path) -> list[ChromeNavigationEven
         raise ValueError("Chrome History.json must contain a Session list")
 
     events: list[ChromeNavigationEvent] = []
+    # Walk session tabs and skip incomplete or invalid navigation records.
     for session in data["Session"]:
         if not isinstance(session, dict):
             continue

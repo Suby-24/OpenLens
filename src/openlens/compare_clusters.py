@@ -20,6 +20,7 @@ from .takeout import read_watch_events
 
 
 def compare(source: Path, output: Path, *, days: int = 90, sample_size: int = 1000) -> None:
+    # Select recent unique videos and embed their titles once for every k.
     events = read_watch_events(source)
     if not events or days < 1:
         raise ValueError("Need watch events and a positive day window")
@@ -33,10 +34,12 @@ def compare(source: Path, output: Path, *, days: int = 90, sample_size: int = 10
     matrix = embed_titles(titles)
     coordinates = PCA(n_components=2, random_state=42).fit_transform(matrix)
     watches = Counter(event.video_id for event in recent)
+    # Reuse one PCA projection so the k=5..12 plots stay comparable.
     charts = make_subplots(rows=2, cols=4, subplot_titles=[f"k={k}" for k in range(5, 13)])
     focus = go.Figure()
     metrics: list[tuple[int, float, float]] = []
     palette = ["#4477AA", "#EE6677", "#228833", "#CCBB44", "#66CCEE", "#AA3377", "#BBBBBB", "#332288", "#44AA99", "#DDCC77", "#AA4499", "#117733"]
+    # Fit each k independently and record inertia and silhouette scores.
     for k in range(5, 13):
         model = KMeans(n_clusters=k, random_state=42, n_init=10)
         labels = model.fit_predict(matrix)
@@ -49,6 +52,7 @@ def compare(source: Path, output: Path, *, days: int = 90, sample_size: int = 10
             customdata=[[escape(title, quote=True), watches[video_id], int(label)] for video_id, title, label in zip(ids, titles, labels)],
             hovertemplate="%{customdata[0]}<br>시청 %{customdata[1]}회 · 군집 %{customdata[2]}<extra></extra>",
         ), row=row, col=col)
+        # Build a larger view for the currently selected k.
         if k == 11:
             for cluster_id in range(k):
                 members = [i for i, label in enumerate(labels) if label == cluster_id]
@@ -64,6 +68,7 @@ def compare(source: Path, output: Path, *, days: int = 90, sample_size: int = 10
                         xaxis_title="PCA 축 1", yaxis_title="PCA 축 2", legend_title="군집과 영상 수",
                         hovermode="closest")
     scores = go.Figure()
+    # Show both the elbow curve and the gain from adding one cluster.
     scores.add_trace(go.Scatter(x=[m[0] for m in metrics], y=[m[1] for m in metrics], mode="lines+markers", name="Inertia (엘보우)", yaxis="y1"))
     scores.add_trace(go.Scatter(x=[m[0] for m in metrics], y=[m[2] for m in metrics], mode="lines+markers", name="실루엣", yaxis="y2"))
     scores.update_layout(title="엘보우와 실루엣", xaxis={"title": "k", "dtick": 1}, yaxis={"title": "Inertia"}, yaxis2={"title": "실루엣", "overlaying": "y", "side": "right"}, height=450)
@@ -73,6 +78,7 @@ def compare(source: Path, output: Path, *, days: int = 90, sample_size: int = 10
     gain_chart.update_layout(title="k를 1 늘렸을 때 Inertia 감소량", xaxis={"title": "새 k", "dtick": 1},
                              yaxis_title="감소량", height=340)
     rows = "".join(f"<tr><td>{k}</td><td>{inertia:.2f}</td><td>{sil:.4f}</td><td>{(1-inertia/metrics[0][1])*100:.1f}%</td></tr>" for k, inertia, sil in metrics)
+    # Build an interactive report whose tooltips contain private titles.
     html = f"""<!doctype html><html lang="ko"><meta charset="utf-8"><title>OpenLens k 비교</title>
 <style>body{{font-family:system-ui,sans-serif;max-width:1450px;margin:auto;padding:24px}}table{{border-collapse:collapse}}td,th{{padding:7px 16px;border:1px solid #ccc}}</style>
 <h1>클러스터 수 비교</h1><p>기간 {end.date()} 기준 최근 {days}일 · 고유 영상 {len(ids):,}개.</p>

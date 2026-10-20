@@ -18,6 +18,7 @@ from .cluster import embed_titles
 
 
 def compare(source: Path, output: Path) -> None:
+    # Keep only human-verified training rows from the combined CSV.
     with source.open(newline="", encoding="utf-8-sig") as file:
         rows = list(csv.DictReader(file))
     required = {"video_id", "title", "category_label", "source", "label_status"}
@@ -28,12 +29,14 @@ def compare(source: Path, output: Path) -> None:
         raise ValueError("Need at least 12 unique verified videos")
     titles = [row["title"] for row in rows]
     true_labels = [row["category_label"] for row in rows]
+    # Embed titles once, then use the same coordinates in every plot.
     matrix = embed_titles(titles)
     points = PCA(n_components=2, random_state=42).fit_transform(matrix)
     palette = ["#4477AA", "#EE6677", "#228833", "#CCBB44", "#66CCEE", "#AA3377", "#BBBBBB", "#332288", "#44AA99", "#DDCC77", "#AA4499", "#117733"]
     panels = make_subplots(rows=2, cols=4, subplot_titles=[f"k={k}" for k in range(5, 13)])
     metrics = []
     cluster_details = {}
+    # Compare cluster separation with agreement against reviewed categories.
     for k in range(5, 13):
         model = KMeans(n_clusters=k, random_state=42, n_init=10)
         labels = model.fit_predict(matrix)
@@ -60,11 +63,13 @@ def compare(source: Path, output: Path) -> None:
                                      mode="lines+markers", name=name))
     quality.update_layout(title="군집 분리도와 실제 카테고리 일치도", xaxis={"title": "k", "dtick": 1}, height=400)
     selected_k = 11
+    # Show the reviewed category mix inside each selected cluster.
     detail = "".join(f"<tr><td>{i}</td><td>{sum(counts.values())}</td><td>{escape(', '.join(f'{name}: {count}' for name, count in counts.most_common()))}</td></tr>"
                      for i, counts in enumerate(cluster_details[selected_k]))
     score_rows = "".join(f"<tr><td>{k}</td><td>{inertia:.2f}</td><td>{sil:.4f}</td><td>{ari:.4f}</td><td>{nmi:.4f}</td></tr>"
                          for k, inertia, sil, ari, nmi in metrics)
     source_counts = Counter(row["source"] for row in rows)
+    # Build an HTML report that includes title-level training examples.
     html = f"""<!doctype html><html lang="ko"><meta charset="utf-8"><title>OpenLens 통합 학습 데이터 군집 평가</title>
 <style>body{{font-family:system-ui,sans-serif;max-width:1450px;margin:auto;padding:24px}}table{{border-collapse:collapse}}td,th{{padding:7px 16px;border:1px solid #ccc;text-align:left}}</style>
 <h1>개인·외부 통합 학습 데이터 군집 평가</h1><p>검증된 영상 {len(rows)}개 · 개인 {source_counts['personal']}개 · 외부 {source_counts['external']}개.</p>

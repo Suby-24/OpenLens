@@ -17,6 +17,7 @@ from .takeout import read_watch_events
 
 
 def read_labels(path: Path) -> dict[str, str]:
+    # Load reviewed personal labels and reject conflicting labels for one video.
     labels: dict[str, str] = {}
     with path.open(newline="", encoding="utf-8-sig") as file:
         reader = csv.DictReader(file)
@@ -34,6 +35,7 @@ def read_labels(path: Path) -> dict[str, str]:
 
 def read_external_labels(path: Path, *, allow_proposed: bool = False) -> list[tuple[str, str, str]]:
     """Read external titles for training only; never use them as watch events."""
+    # Keep verified candidates unless the caller explicitly allows proposed ones.
     rows: list[tuple[str, str, str]] = []
     with path.open(newline="", encoding="utf-8-sig") as file:
         reader = csv.DictReader(file)
@@ -50,6 +52,7 @@ def read_external_labels(path: Path, *, allow_proposed: bool = False) -> list[tu
 
 def read_training_data(path: Path, *, allow_proposed: bool = False) -> tuple[dict[str, str], list[tuple[str, str, str]]]:
     """Read one training file while keeping personal and external origins distinct."""
+    # Separate personal labels from external examples before model training.
     personal: dict[str, str] = {}
     external: list[tuple[str, str, str]] = []
     seen: set[str] = set()
@@ -82,6 +85,7 @@ def read_training_data(path: Path, *, allow_proposed: bool = False) -> tuple[dic
 def classify(source: Path, label_file: Path | None, output: Path, *, days: int = 90,
              external_labels: Path | None = None, training_data: Path | None = None,
              allow_proposed_external: bool = False) -> None:
+    # Build the prediction set from recent personal watch events only.
     if days < 1:
         raise ValueError("days must be positive")
     events = read_watch_events(source)
@@ -92,6 +96,7 @@ def classify(source: Path, label_file: Path | None, output: Path, *, days: int =
     recent = [event for event in events if event.watched_at >= cutoff]
     titles = {event.video_id: event.title for event in recent}
     counts = Counter(event.video_id for event in recent)
+    # Read labels from either a combined training file or separate CSV files.
     if training_data:
         if label_file or external_labels:
             raise ValueError("Use either --training-data or separate label files")
@@ -106,6 +111,7 @@ def classify(source: Path, label_file: Path | None, output: Path, *, days: int =
     classes = Counter([labels[video_id] for video_id in known] + [row[2] for row in external])
     if len(classes) < 2:
         raise ValueError("At least two labeled categories are needed")
+    # Embed personal titles and external training titles in the same vector space.
     ids = sorted(titles)
     all_vectors = embed_titles([titles[video_id] for video_id in ids] + [row[1] for row in external])
     vectors = all_vectors[:len(ids)]
@@ -114,6 +120,7 @@ def classify(source: Path, label_file: Path | None, output: Path, *, days: int =
     x = np.asarray([vectors[index[video_id]] for video_id in known])
     y = [labels[video_id] for video_id in known]
     personal_classes = Counter(y)
+    # Evaluate on held-out personal labels when there are enough examples.
     if len(personal_classes) >= 2 and min(personal_classes.values()) >= 2 and len(known) >= 10:
         test_count = max(len(personal_classes), round(len(known) * 0.2))
         if len(known) - test_count >= len(personal_classes):
@@ -129,9 +136,11 @@ def classify(source: Path, label_file: Path | None, output: Path, *, days: int =
     if external:
         x = np.concatenate((x, external_vectors))
         y = list(y) + [row[2] for row in external]
+    # Fit the final classifier on all allowed labels, then score personal videos.
     model = LogisticRegression(max_iter=1000, class_weight="balanced")
     model.fit(x, y)
     probabilities = model.predict_proba(vectors)
+    # Save predictions with review flags; external videos never become profile rows.
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("x", newline="", encoding="utf-8-sig") as file:
         writer = csv.writer(file)
