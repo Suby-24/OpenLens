@@ -6,6 +6,7 @@ from unittest import TestCase
 from unittest.mock import patch
 
 import numpy as np
+import joblib
 
 from openlens.classify import classify, read_external_labels, read_training_data
 from openlens.takeout import WatchEvent, write_watch_events_csv
@@ -39,6 +40,10 @@ class ExternalTrainingTests(TestCase):
             with output.open(newline="", encoding="utf-8-sig") as file:
                 rows = list(csv.DictReader(file))
             self.assertEqual({row["video_id"] for row in rows}, {"personal-a", "personal-b"})
+            saved = joblib.load(output.with_suffix(".joblib"))
+            self.assertEqual(saved["classifier"].classes_.tolist(),
+                             ["Entertainment", "Environment", "Sports"])
+            self.assertEqual(saved["embedding_dimensions"], 2)
 
             combined = root / "training-with-external.csv"
             build_training_data(labels, external, combined)
@@ -52,3 +57,4 @@ class ExternalTrainingTests(TestCase):
             with combined_output.open(newline="", encoding="utf-8-sig") as file:
                 combined_rows = list(csv.DictReader(file))
             self.assertEqual({row["video_id"] for row in combined_rows}, {"personal-a", "personal-b"})
+            self.assertTrue(combined_output.with_suffix(".joblib").is_file())

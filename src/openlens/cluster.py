@@ -79,7 +79,7 @@ def cluster_watch_events(
     if not events:
         raise ValueError("No watch events were supplied")
 
-    window_end = max(event.watched_at for event in events)
+    window_end = max(event.watched_at for event in events) # 특정한 기간동안의 파일을 선택함
     window_start = window_end - timedelta(days=days)
     recent = [event for event in events if event.watched_at >= window_start]
 
@@ -111,6 +111,7 @@ def cluster_watch_events(
     distances = model.transform(matrix)
     clusters = []
     # Summarize each cluster and pick titles closest to its center.
+    # 클러스터간의 거리를 계산하여 가장 가까운 3개의 대표 제목을 선택함
     for cluster_id in range(k):
         members = [index for index, label in enumerate(labels) if label == cluster_id]
         nearest = sorted(members, key=lambda index: distances[index, cluster_id])[:3]

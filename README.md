@@ -74,10 +74,10 @@ python3 -m venv .venv
 
 ### 클러스터별 레이블링 샘플
 
-통합 CSV를 클러스터링한 뒤 각 그룹에서 중심에 가장 가까운 영상 20개씩 뽑아 별도 CSV를 만들 수 있습니다. `rank=1`이 그룹 중심에 가장 가까운 영상입니다. 이 파일의 `category_label` 열에 영상별 상위 카테고리를 직접 입력합니다. 같은 클러스터라고 모두 같은 카테고리로 자동 지정하지 않습니다. 이 샘플은 대표 사례를 확인하기 위한 것이며, 그룹 내부의 예외까지 평가하려면 나중에 무작위 샘플도 추가해야 합니다.
+통합 CSV를 클러스터링한 뒤 각 그룹의 영상을 중심 거리 기준 네 구간으로 나눠 20개씩 뽑아 별도 CSV를 만들 수 있습니다. 각 구간에서 5개씩 고르고, 이미 선택한 영상과 임베딩 거리가 먼 후보를 우선합니다. `rank`는 추출 순서이며 중심과 가까운 순위가 아닙니다. 이 파일의 `category_label` 열에 영상별 상위 카테고리를 직접 입력합니다. 같은 클러스터라고 모두 같은 카테고리로 자동 지정하지 않습니다. 기존 수작업 파일은 덮어쓰지 않으므로 새 샘플에는 다른 출력 이름을 지정합니다.
 
 ```bash
-HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.label_samples data/youtube-watch-events.csv --k 11 --days 90 --per-cluster 20 --output data/cluster-label-samples-k11-days90.csv
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.label_samples data/youtube-watch-events.csv --k 11 --days 90 --per-cluster 20 --output data/cluster-label-samples-k11-days90-diverse.csv
 ```
 
 개인 제목이 포함된 결과 파일은 `data/`에만 저장되며, 이미 존재하는 파일은 덮어쓰지 않습니다. `category_label`과 `review_note` 열은 처음에 비어 있습니다.
@@ -114,6 +114,8 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.classify da
 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.classify data/youtube-watch-events.csv --training-data data/training-with-external-verified.csv --output data/category-predictions-verified.csv
 ```
 
+분류 명령은 예측 CSV와 함께 학습된 로지스틱 회귀 모델을 같은 위치의 `.joblib` 파일로 저장합니다. 위 명령의 모델 파일은 `data/category-predictions-verified.joblib`입니다. `--model-output models/category-classifier.joblib`처럼 저장 경로를 따로 지정할 수도 있습니다. 파일에는 분류기의 학습된 가중치·카테고리와 사용한 임베딩 모델 이름·벡터 차원·scikit-learn 버전이 들어갑니다. EmbeddingGemma 자체나 원본 시청 기록은 저장하지 않습니다. 두 결과 파일 모두 기존 파일을 덮어쓰지 않으며, `data/`와 `models/`는 Git에서 제외합니다. `.joblib` 파일은 신뢰할 수 있는 로컬 파일만 불러와야 하며, 라이브러리 버전을 바꾸면 재학습이 필요할 수 있습니다.
+
 Chrome 기록은 Python 코드에서 `read_chrome_navigation_events("/path/to/Takeout/Chrome")`로 읽을 수 있습니다. 이 함수는 `History.json`의 `Session → tab → navigation`만 처리하고, 시각을 UTC로 바꾼 뒤 과거순으로 정렬합니다. `Browser History`와 `Typed Url`은 아직 처리하지 않습니다. 세션 이동 기록은 전체 방문 기록이 아니며, 다른 Chrome Takeout 파일(주소·기기 설정 등)은 읽지 않습니다.
 
 ## 첫 클러스터링 실험
@@ -133,6 +135,24 @@ Chrome 기록은 Python 코드에서 `read_chrome_navigation_events("/path/to/Ta
 ```
 
 이 명령은 `artifacts/clusters-k11-days90.html`에 오프라인 HTML 보고서를 만듭니다. 파일을 브라우저로 열면 클러스터별 고유 영상 수·시청 횟수 막대그래프와 제목별 점 분포도를 볼 수 있습니다. 점의 크기는 시청 횟수이고, 마우스를 올리면 제목이 나타납니다. 점의 위치는 K-Means에 사용한 동일한 임베딩 벡터를 표시용으로 2차원 PCA 투영한 것이므로 원래 고차원 거리와 정확히 같지는 않습니다. 보고서에는 개인 시청 제목이 포함되므로 `artifacts/`는 Git에서 제외합니다. 그룹을 직접 수정하는 기능은 아직 없습니다. 다른 `--k` 값으로 다시 실행해 별도 보고서를 비교할 수 있습니다.
+
+## 상위 카테고리 안의 하위 주제 실험
+
+상위 분류 결과에서 카테고리 하나를 골라 다시 군집화할 수 있습니다. Entertainment를 `k=5`로 묶고, 각 군집을 중심 거리 순서로 네 구간으로 나눠 구간마다 5개씩 레이블링 샘플로 저장합니다. 각 구간 안에서는 이미 고른 영상과 임베딩 거리가 먼 영상을 우선합니다. 상위 카테고리가 `review_needed`였던 영상도 탐색에는 포함하지만, 샘플 CSV에 그 상태를 표시합니다. 이 상태를 하위 주제의 정답으로 사용하지는 않습니다.
+
+```bash
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.subcategory sample data/category-predictions-verified-saved.csv --parent Entertainment --k 5 --per-cluster 20
+```
+
+전체 군집 결과는 `data/subcategories/entertainment-clusters-k5-diverse.csv`, 사람이 입력할 샘플은 `data/subcategories/entertainment-label-samples-k5-diverse.csv`입니다. 기존 `-k5.csv` 레이블 파일은 그대로 남습니다. 샘플의 `primary_label`에 주 하위 카테고리를 하나 입력하고, 필요한 경우 `secondary_labels`에 보조 카테고리를 `|`로 구분해 입력합니다. 해당 상위 카테고리가 아니거나 제목만으로 판단하기 어렵다면 `primary_label`을 비워 두고 `review_note`에 이유를 적습니다. 허용되는 하위 카테고리 후보는 [분류표](src/openlens/subcategory_taxonomy.py)에서 수정할 수 있습니다. 이 후보는 확정된 카테고리가 아니며, `cluster_id`도 주제 이름이 아닙니다.
+
+두 종류 이상의 주 레이블을 직접 입력한 뒤에만 아래 분류 명령을 실행할 수 있습니다. 이 명령은 **사람이 입력한 주 레이블만** 학습해 Entertainment의 나머지 영상에 적용합니다. 보조 레이블은 원본 입력 그대로 보존하되 아직 자동 예측하지 않습니다.
+
+```bash
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.subcategory classify data/subcategories/entertainment-clusters-k5-diverse.csv data/subcategories/entertainment-label-samples-k5-diverse.csv --parent Entertainment --output data/subcategories/entertainment-predictions-diverse.csv --model-output models/entertainment-subcategory-diverse.joblib
+```
+
+다른 상위 카테고리도 `--parent`를 바꿔 같은 절차를 반복합니다. 각 카테고리의 데이터가 적으면 `k=5`가 의미 없거나 실행되지 않을 수 있으므로 그때는 `--k`를 낮추거나 상위 레이블을 먼저 보강합니다. `data/`와 `models/`의 개인 결과물은 Git에서 제외합니다.
 
 ## 개인정보와 GitHub
 

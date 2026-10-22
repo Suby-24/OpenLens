@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 
 from .cluster import ClusteringResult, cluster_watch_events
+from .sampling import select_diverse_samples
 from .takeout import read_watch_events
 
 
@@ -24,20 +25,19 @@ class LabelSample:
 
 
 def select_label_samples(result: ClusteringResult, *, per_cluster: int = 20) -> list[LabelSample]:
-    """Take the nearest videos to each cluster's centroid, with stable tie-breaking."""
-    # Rank videos by distance to their cluster center for human review.
+    """Sample each cluster across center-distance bands with embedding diversity."""
     if per_cluster < 1:
         raise ValueError("per_cluster must be positive")
     samples: list[LabelSample] = []
+    video_ids = [video.video_id for video in result.videos]
     for cluster in result.clusters:
         members = [index for index, video in enumerate(result.videos)
                    if video.cluster_id == cluster.cluster_id]
         center = result.embedding_vectors[members].mean(axis=0)
-        ranked = sorted(members, key=lambda index: (
-            float(np.linalg.norm(result.embedding_vectors[index] - center)),
-            result.videos[index].video_id,
-        ))
-        for rank, index in enumerate(ranked[:per_cluster], start=1):
+        distances = np.linalg.norm(result.embedding_vectors - center, axis=1)
+        selected = select_diverse_samples(members, result.embedding_vectors, distances,
+                                          video_ids, per_cluster)
+        for rank, index in enumerate(selected, start=1):
             video = result.videos[index]
             samples.append(LabelSample(
                 cluster_id=cluster.cluster_id,
@@ -45,7 +45,7 @@ def select_label_samples(result: ClusteringResult, *, per_cluster: int = 20) -> 
                 video_id=video.video_id,
                 title=video.title,
                 watch_count=video.watch_count,
-                distance_to_center=float(np.linalg.norm(result.embedding_vectors[index] - center)),
+                distance_to_center=float(distances[index]),
             ))
     return samples
 
