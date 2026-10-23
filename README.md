@@ -158,6 +158,16 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.subcategory
 
 다른 상위 카테고리도 `--parent`를 바꾸면 같은 방법으로 살펴볼 수 있습니다. 영상이 적은 카테고리에서는 `k=5`가 의미 없거나 실행되지 않을 수 있습니다. 그럴 때는 `--k`를 낮추거나 상위 레이블을 먼저 보강해야 합니다. 개인 결과물은 계속 `data/`와 `models/`에만 보관합니다.
 
+### 카테고리별 영상 둘러보기
+
+상위·하위 예측 CSV를 디렉토리처럼 펼쳐 볼 수 있는 로컬 HTML도 만들 수 있습니다. 상위 카테고리 아래 하위 카테고리, 그 아래 개별 영상이 표시됩니다. 하위 분류를 아직 하지 않은 상위 카테고리는 `하위 미분류`로 남습니다.
+
+```bash
+.venv/bin/python -m openlens.browse_categories data/category-predictions-diverse.csv --subcategory data/subcategories/entertainment-predictions-diverse.csv --output artifacts/category-directory.html
+```
+
+다른 상위 카테고리의 하위 예측 CSV가 생기면 `--subcategory`를 반복해 추가할 수 있습니다. 서로 다른 실행의 CSV를 섞으면 영상이나 상위 카테고리가 맞지 않을 수 있으며, 그런 하위 결과는 보고서에서 제외하고 개수를 알립니다. HTML에는 개인 시청 제목이 들어 있으므로 로컬에서만 열고 공유하거나 GitHub에 올리지 않습니다. 기존 보고서는 덮어쓰지 않으니 새 실행에서는 다른 출력 이름을 지정합니다.
+
 ## 개인정보와 GitHub
 
 이 프로젝트를 만들면서 가장 조심해야 할 것은 개인 기록입니다. 방문·시청 기록과 프로필, 토큰, 개인 데이터로 학습한 모델은 로컬에만 둡니다. GitHub에는 코드와 문서, 개인정보가 없는 예시만 올리려 합니다. 새 파일을 Git에 추가하기 전에는 `git status`와 변경 내용을 확인합니다. 기준은 [데이터 취급 원칙](docs/data-policy.md)에 정리했습니다.
