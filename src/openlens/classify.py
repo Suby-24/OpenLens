@@ -16,6 +16,7 @@ from sklearn.metrics import classification_report
 
 from .cluster import EMBEDDING_MODEL, embed_titles
 from .takeout import read_watch_events
+from .browse_categories import report_after_training
 
 
 def read_labels(path: Path) -> dict[str, str]:
@@ -202,6 +203,7 @@ def main() -> None:
                  training_data=args.training_data,
                  allow_proposed_external=args.allow_proposed_external,
                  model_output=args.model_output)
+        report_after_training(args.output)
     except (ValueError, FileExistsError) as exc:
         parser.error(str(exc))
 

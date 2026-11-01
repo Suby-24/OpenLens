@@ -38,7 +38,9 @@ class SubcategoryTests(TestCase):
                                 [5.0, 5.0], [5.1, 5.0], [5.0, 5.1]])
             with patch("openlens.subcategory.embed_titles", return_value=vectors):
                 clusters, labels = sample_parent(source, "Entertainment", root, k=2,
-                                                 per_cluster=2)
+                                                 per_cluster=2, labels_dir=root / "labels")
+            self.assertEqual(clusters.parent, root)
+            self.assertEqual(labels.parent, root / "labels")
 
             with clusters.open(newline="", encoding="utf-8-sig") as file:
                 all_rows = list(csv.DictReader(file))

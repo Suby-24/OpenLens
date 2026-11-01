@@ -17,6 +17,7 @@ from sklearn.linear_model import LogisticRegression
 from .cluster import EMBEDDING_MODEL, embed_titles
 from .sampling import select_diverse_samples
 from .subcategory_taxonomy import SUBCATEGORIES
+from .browse_categories import report_after_training
 
 
 
@@ -84,7 +85,7 @@ def write_csv(path: Path, fields: tuple[str, ...], rows: list[dict[str, object]]
 
 
 def sample_parent(source: Path, parent: str, output_dir: Path, *, k: int = 5,
-                  per_cluster: int = 20) -> tuple[Path, Path]:
+                  per_cluster: int = 20, labels_dir: Path | None = None) -> tuple[Path, Path]:
     """Cluster one parent category and create examples for manual labeling."""
     if k < 2 or per_cluster < 1:
         raise ValueError("k must be at least 2 and per_cluster must be positive")
@@ -94,7 +95,7 @@ def sample_parent(source: Path, parent: str, output_dir: Path, *, k: int = 5,
 
     slug = re.sub(r"[^a-z0-9]+", "-", parent.lower()).strip("-")
     clusters_path = output_dir / f"{slug}-clusters-k{k}-diverse.csv"
-    labels_path = output_dir / f"{slug}-label-samples-k{k}-diverse.csv"
+    labels_path = (labels_dir if labels_dir is not None else output_dir) / f"{slug}-label-samples-k{k}-diverse.csv"
     if clusters_path.exists() or labels_path.exists():
         raise FileExistsError("Cluster or label sample CSV already exists")
 
@@ -230,7 +231,10 @@ def main() -> None:
     sample.add_argument("--parent", choices=SUBCATEGORIES, required=True)
     sample.add_argument("--k", type=int, default=5)
     sample.add_argument("--per-cluster", type=int, default=20)
-    sample.add_argument("--output-dir", type=Path, default=Path("data/subcategories"))
+    sample.add_argument("--output-dir", type=Path, default=Path("data/clusters"),
+                        help="Directory for cluster results")
+    sample.add_argument("--labels-dir", type=Path, default=Path("data/labels"),
+                        help="Directory for editable labeling samples")
     classify = commands.add_parser("classify", help="Train on reviewed primary labels")
     classify.add_argument("clusters", type=Path)
     classify.add_argument("labels", type=Path)
@@ -241,7 +245,8 @@ def main() -> None:
     try:
         if args.command == "sample":
             clusters, labels = sample_parent(args.source, args.parent, args.output_dir,
-                                             k=args.k, per_cluster=args.per_cluster)
+                                             k=args.k, per_cluster=args.per_cluster,
+                                             labels_dir=args.labels_dir)
             print(f"전체 군집 파일: {clusters}")
             print(f"레이블링 샘플: {labels}")
             print(f"허용되는 주 레이블: {', '.join(SUBCATEGORIES[args.parent])}")
@@ -251,6 +256,7 @@ def main() -> None:
             print(f"검증된 하위 레이블: {reviewed}개 / 분류한 영상: {total}개")
             print(f"예측 결과: {args.output}")
             print(f"학습 모델: {args.model_output}")
+            report_after_training(args.output, parent=args.parent)
     except (ValueError, FileExistsError) as exc:
         parser.error(str(exc))
 

@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
+import os
+import tempfile
 from collections import defaultdict
 from html import escape
 from pathlib import Path
@@ -55,9 +58,10 @@ def build_directory(upper_path: Path, sub_paths: list[Path]) -> tuple[dict, int]
     return directory, skipped
 
 
-def write_report(directory: dict, output: Path, skipped: int = 0) -> Path:
-    """Write a standalone, escaped HTML tree without replacing older reports."""
-    if output.exists():
+def write_report(directory: dict, output: Path, skipped: int = 0, *,
+                 overwrite: bool = False, source_note: str = "") -> Path:
+    """Write a standalone tree; automatic reports explicitly allow replacement."""
+    if output.exists() and not overwrite:
         raise FileExistsError(f"Report already exists: {output}")
     total = sum(len(videos) for children in directory.values() for videos in children.values())
     parts = []
@@ -99,16 +103,98 @@ a {{color:#1759a5;text-decoration:none}} a:hover {{text-decoration:underline}}
 @media(max-width:600px) {{body {{margin:16px auto;padding:0 12px}} .meta {{display:block}}}}
 </style></head><body>
 <h1>OpenLens 카테고리 탐색</h1>
+<p class="note">{escape(source_note)}</p>
 <p class="note">상위 카테고리 {len(directory):,}개 · 영상 {total:,}개. 이름을 눌러 하위 카테고리와 영상을 펼쳐 보세요.
-예측 결과는 정답이 아니며, <code>review_needed</code>는 검토가 필요합니다.</p>
+예측 결과는 정답이 아니며, <code>review_needed</code>는 검토가 필요합니다.
+<code>ai_suggested</code>는 제목 단서로 만든 제안이며 영상 내용을 검증한 정답이 아닙니다.</p>
 {warning}
 <main>{''.join(parts)}</main>
 </body></html>
 """
     output.parent.mkdir(parents=True, exist_ok=True)
-    with output.open("x", encoding="utf-8") as file:
-        file.write(document)
+    if overwrite:
+        atomic_write(output, document)
+    else:
+        with output.open("x", encoding="utf-8") as file:
+            file.write(document)
     return output
+
+
+def atomic_write(path: Path, text: str) -> None:
+    """Replace a generated file only after its new content is fully written."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                         prefix=f".{path.name}.", delete=False) as file:
+            temporary = Path(file.name)
+            file.write(text)
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None and temporary.exists():
+            temporary.unlink()
+
+
+def register_latest_results(upper: Path, subcategories: list[Path], *,
+                            project_root: Path | None = None) -> Path:
+    """Register explicit model outputs and rebuild the same current report."""
+    root = (project_root or Path(__file__).resolve().parents[2]).resolve()
+    upper = upper.resolve()
+    upper_rows = read_rows(upper, {"video_id", "category_label", "predicted_label"})
+    expected: dict[str, set[str]] = defaultdict(set)
+    for row in upper_rows:
+        parent = row["category_label"].strip() or row["predicted_label"].strip()
+        expected[parent].add(row["video_id"].strip())
+    sources: dict[str, str] = {}
+    for path in subcategories:
+        path = path.resolve()
+        rows = read_rows(path, {"parent_category", "video_id"})
+        parents = {row["parent_category"].strip() for row in rows}
+        if len(parents) != 1:
+            raise ValueError(f"Latest subcategory result must contain one parent: {path}")
+        parent = next(iter(parents))
+        if parent in sources:
+            raise ValueError(f"Duplicate latest subcategory result: {parent}")
+        if {row["video_id"].strip() for row in rows} != expected.get(parent, set()):
+            raise ValueError(f"{parent}: lower results do not match the current upper video list")
+        sources[parent] = str(path)
+
+    directory, skipped = build_directory(upper, [Path(p) for p in sources.values()])
+    report = root / "artifacts/category-directory.html"
+    note = f"최신 학습 결과 · 상위: {upper.name} · 하위: {', '.join(sorted(sources)) or '아직 없음'}. 브라우저를 새로고침하면 갱신된 보고서를 볼 수 있습니다."
+    # All sources are validated before replacing the generated report or registry.
+    write_report(directory, report, skipped, overwrite=True, source_note=note)
+    registry = root / "data/predictions/latest-results.json"
+    atomic_write(registry, json.dumps({"upper": str(upper), "subcategories": sources},
+                                      ensure_ascii=False, indent=2))
+    return report
+
+
+def report_after_training(prediction: Path, *, parent: str | None = None,
+                          project_root: Path | None = None) -> Path | None:
+    """Update the report after a successful CLI run without failing the training."""
+    root = (project_root or Path(__file__).resolve().parents[2]).resolve()
+    try:
+        if parent is None:
+            # A new upper run invalidates older lower assignments.
+            report = register_latest_results(prediction, [], project_root=root)
+        else:
+            registry = root / "data/predictions/latest-results.json"
+            if not registry.exists():
+                raise ValueError("Register an upper result with browse_categories --latest first")
+            state = json.loads(registry.read_text(encoding="utf-8"))
+            rows = read_rows(prediction, {"parent_category"})
+            if not rows or any(row["parent_category"].strip() != parent for row in rows):
+                raise ValueError(f"Prediction CSV does not belong to {parent}")
+            sources = dict(state["subcategories"])
+            sources[parent] = str(prediction.resolve())
+            report = register_latest_results(Path(state["upper"]),
+                                             [Path(p) for p in sources.values()], project_root=root)
+        print(f"자동 갱신 보고서: {report}")
+        return report
+    except (OSError, ValueError, KeyError, TypeError, csv.Error) as exc:
+        print(f"학습 결과는 저장됐지만 HTML 갱신에 실패했습니다: {exc}")
+        return None
 
 
 def main() -> None:
@@ -116,14 +202,23 @@ def main() -> None:
     parser.add_argument("upper", type=Path, help="Upper-category prediction CSV")
     parser.add_argument("--subcategory", type=Path, action="append", default=[],
                         help="Subcategory prediction CSV; repeat for multiple parents")
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--latest", action="store_true",
+                        help="Register model results and update artifacts/category-directory.html")
     args = parser.parse_args()
+    if args.latest and args.output:
+        parser.error("--latest uses a fixed report path; do not combine it with --output")
+    if not args.latest and args.output is None:
+        parser.error("--output or --latest is required")
     try:
-        directory, skipped = build_directory(args.upper, args.subcategory)
-        write_report(directory, args.output, skipped)
+        if args.latest:
+            output = register_latest_results(args.upper, args.subcategory)
+        else:
+            directory, skipped = build_directory(args.upper, args.subcategory)
+            output = write_report(directory, args.output, skipped)
     except (ValueError, FileExistsError) as exc:
         parser.error(str(exc))
-    print(f"로컬 보고서: {args.output}")
+    print(f"로컬 보고서: {output}")
     print("개인 시청 제목이 포함되므로 GitHub에 올리거나 공유하지 마세요.")
 
 

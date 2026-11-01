@@ -57,6 +57,20 @@ data/             개인 원본·가공 데이터(추적하지 않음)
 models/           학습 결과물(추적하지 않음)
 ```
 
+개인 데이터는 역할에 따라 다음 여섯 폴더에 나눠 보관합니다. 파일명은 그대로 유지하고, 현재 쓰는 결과와 과거 실험을 구분했습니다.
+
+```text
+data/
+├── records/       시청 기록
+├── labels/        직접 작성하는 상위·하위 정답과 Numbers 문서
+├── training/      외부 학습 후보와 통합 학습 자료
+├── clusters/      현재 사용하는 군집 결과
+├── predictions/   현재 사용하는 상위·하위 예측 결과
+└── archive/       과거 실험, 백업과 이전 검토 목록
+```
+
+정답을 수정할 파일은 `labels/cluster-label-samples-k11-days90-diverse.csv`와 `labels/entertainment-label-samples-k5-diverse.csv`입니다. 초기 하위 레이블 80개가 담긴 `labels/entertainment-label-samples-k5.csv`도 별도 자료로 보존합니다. 현재 상위 결과는 `predictions/category-predictions-retrained.csv`, 하위 결과는 `predictions/entertainment-predictions-retrained.csv`입니다. 데이터 파일을 이동했다면 이전 경로로 된 터미널 명령도 바꿔야 합니다.
+
 먼저 Google Takeout으로 받은 YouTube ZIP에서 시청 기록이 얼마나 들어 있는지 확인할 수 있습니다. ZIP을 미리 풀 필요는 없습니다.
 
 ```bash
@@ -70,8 +84,8 @@ python3 -m venv .venv
 Takeout을 여러 번 받았다면 아래 명령으로 하나로 합칠 수 있습니다. 영어·한국어 시청 기록을 읽고, 영상 ID와 시청 시각이 **둘 다 같은 기록만** 중복으로 제거합니다. 같은 영상을 다른 때에 다시 봤다면 별도 시청으로 남깁니다. 결과 CSV는 `video_id,title,url,watched_at` 열을 가지며, 시각은 UTC 오프셋을 포함한 ISO 8601 형식으로 시청 시각순 저장됩니다.
 
 ```bash
-.venv/bin/python -m openlens.merge /path/to/older.zip /path/to/newer.zip --output data/youtube-watch-events.csv
-.venv/bin/openlens data/youtube-watch-events.csv --days 90
+.venv/bin/python -m openlens.merge /path/to/older.zip /path/to/newer.zip --output data/records/youtube-watch-events.csv
+.venv/bin/openlens data/records/youtube-watch-events.csv --days 90
 ```
 
 이 CSV에는 내가 본 영상의 제목과 URL이 들어 있습니다. `data/`는 Git에서 제외했지만 파일 자체도 공유하지 않도록 주의해야 합니다. 이후 군집화·시각화에는 ZIP 대신 이 CSV를 사용할 수 있습니다. 아직 사람이 붙인 카테고리 레이블은 없는, 시청 기록 원본에 가까운 파일입니다.
@@ -81,7 +95,7 @@ Takeout을 여러 번 받았다면 아래 명령으로 하나로 합칠 수 있�
 모든 영상을 하나씩 레이블링하기는 어렵습니다. 그래서 먼저 군집을 만들고, 각 그룹에서 사람이 살펴볼 영상 20개를 뽑습니다. 중심에 가까운 영상만 고르면 비슷한 제목이 몰릴 수 있어, 중심부터 바깥쪽까지 네 구간에서 5개씩 고릅니다. 각 구간 안에서도 이미 고른 영상과 임베딩 거리가 먼 후보를 우선합니다. `rank`는 뽑힌 순서일 뿐 중심과의 거리 순위는 아닙니다. 영상별 정답은 `category_label`에 직접 입력합니다. 같은 군집에 있다고 모두 같은 카테고리로 지정하지는 않습니다.
 
 ```bash
-HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.label_samples data/youtube-watch-events.csv --k 11 --days 90 --per-cluster 20 --output data/cluster-label-samples-k11-days90-diverse.csv
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.label_samples data/records/youtube-watch-events.csv --k 11 --days 90 --per-cluster 20 --output data/labels/cluster-label-samples-k11-days90-diverse.csv
 ```
 
 처음에는 `category_label`과 `review_note`가 비어 있습니다. 직접 채운 내용을 잃지 않도록 기존 파일은 덮어쓰지 않으니, 새 실험을 할 때는 `--output`에 다른 이름을 지정해야 합니다. 결과 파일은 개인 제목이 들어 있는 `data/`에 보관합니다.
@@ -91,13 +105,13 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.label_sampl
 내 기록만으로 학습 예시가 부족한 주제는 공개 YouTube 검색 결과에서 후보를 모을 수 있습니다.
 
 ```bash
-.venv/bin/python -m openlens.external_candidates --output data/external-category-candidates.csv --target 50
+.venv/bin/python -m openlens.external_candidates --output data/training/external-category-candidates.csv --target 50
 ```
 
 검색어로 찾은 영상의 카테고리가 모두 맞는 것은 아닙니다. 처음에는 `label_status=proposed`로 두고, 내용을 확인해 정답이라고 판단한 행만 `verified`로 바꿉니다. 기본 분류 명령은 이렇게 확인한 외부 영상만 학습합니다. 확인하지 않은 후보까지 시험해 보고 싶을 때에만 `--allow-proposed-external`을 붙입니다.
 
 ```bash
-HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.classify data/youtube-watch-events.csv data/cluster-label-samples-k10-days90.csv --external-labels data/external-category-candidates.csv --output data/category-predictions-external-verified.csv
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.classify data/records/youtube-watch-events.csv data/labels/cluster-label-samples-k11-days90-diverse.csv --external-labels data/training/external-category-candidates.csv --output data/predictions/category-predictions-external-verified.csv
 ```
 
 외부 영상은 분류 모델을 가르치는 예시로만 사용합니다. **내 관심사와 시청 횟수**는 내 시청 기록에서만 계산하며, 검색으로 찾은 영상을 내가 본 것처럼 섞지 않습니다.
@@ -105,8 +119,8 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.classify da
 직접 확인한 개인 영상과 외부 후보를 하나의 학습 CSV로 합칠 수도 있습니다. 원본은 그대로 두고, 새 파일의 `source`와 `label_status`로 어디에서 왔고 검증했는지를 구분합니다.
 
 ```bash
-.venv/bin/python -m openlens.training_data data/cluster-label-samples-k10-days90.csv data/external-category-candidates.csv --output data/training-with-external.csv
-HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.classify data/youtube-watch-events.csv --training-data data/training-with-external.csv --allow-proposed-external --output data/category-predictions-combined.csv
+.venv/bin/python -m openlens.training_data data/labels/cluster-label-samples-k11-days90-diverse.csv data/training/external-category-candidates.csv --output data/training/training-with-external.csv
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.classify data/records/youtube-watch-events.csv --training-data data/training/training-with-external.csv --allow-proposed-external --output data/predictions/category-predictions-combined.csv
 ```
 
 두 번째 명령의 `--allow-proposed-external`은 아직 확인하지 않은 외부 후보까지 학습하는 실험용 옵션입니다. 외부 행을 검증해 `verified`로 바꿨다면 이 옵션 없이 실행할 수 있습니다. 합쳐진 CSV는 학습용이지, 개인 프로필을 계산하는 시청 기록은 아닙니다.
@@ -114,18 +128,18 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.classify da
 외부 후보를 전부 직접 확인했다면, 원본은 남겨 두고 검증 완료 사본을 만들 수 있습니다.
 
 ```bash
-.venv/bin/python -m openlens.training_data data/cluster-label-samples-k10-days90.csv data/external-category-candidates.csv --verify-external --output data/training-with-external-verified.csv
-HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.classify data/youtube-watch-events.csv --training-data data/training-with-external-verified.csv --output data/category-predictions-verified.csv
+.venv/bin/python -m openlens.training_data data/labels/cluster-label-samples-k11-days90-diverse.csv data/training/external-category-candidates.csv --verify-external --output data/training/training-with-external-verified.csv
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.classify data/records/youtube-watch-events.csv --training-data data/training/training-with-external-verified.csv --output data/predictions/category-predictions-verified.csv
 ```
 
-분류를 실행하면 예측 CSV와 학습된 로지스틱 회귀 모델이 함께 저장됩니다. 위 명령에서는 모델이 `data/category-predictions-verified.joblib`에 저장되며, `--model-output models/category-classifier.joblib`처럼 경로를 따로 정할 수도 있습니다. 모델 파일에는 학습된 가중치와 카테고리, 사용한 임베딩 모델 이름·벡터 차원·scikit-learn 버전이 들어갑니다. EmbeddingGemma 자체나 원본 시청 기록을 복사해 넣지는 않습니다. 기존 파일은 덮어쓰지 않고, `data/`와 `models/`도 Git에 올리지 않습니다. `.joblib`은 신뢰할 수 있는 로컬 파일만 불러와야 하며, 라이브러리 버전이 달라지면 재학습해야 할 수 있습니다.
+분류를 실행하면 예측 CSV와 학습된 로지스틱 회귀 모델이 함께 저장됩니다. 위 명령에서는 모델이 `data/predictions/category-predictions-verified.joblib`에 저장되며, `--model-output models/category-classifier.joblib`처럼 경로를 따로 정할 수도 있습니다. 모델 파일에는 학습된 가중치와 카테고리, 사용한 임베딩 모델 이름·벡터 차원·scikit-learn 버전이 들어갑니다. EmbeddingGemma 자체나 원본 시청 기록을 복사해 넣지는 않습니다. 기존 파일은 덮어쓰지 않고, `data/`와 `models/`도 Git에 올리지 않습니다. `.joblib`은 신뢰할 수 있는 로컬 파일만 불러와야 하며, 라이브러리 버전이 달라지면 재학습해야 할 수 있습니다.
 
 Chrome 기록은 Python에서 `read_chrome_navigation_events("/path/to/Takeout/Chrome")`로 읽을 수 있습니다. 지금은 `History.json`의 `Session → tab → navigation`만 처리하고, 시각을 UTC로 바꿔 과거순으로 정렬합니다. `Browser History`와 `Typed Url`은 아직 다루지 않으므로, 이 결과를 전체 방문 기록으로 받아들이면 안 됩니다. 주소나 기기 설정 같은 다른 Chrome Takeout 파일도 읽지 않습니다.
 
 ## 첫 클러스터링 실험
 
 ```bash
-.venv/bin/python -m openlens.cluster data/youtube-watch-events.csv --k 11 --days 90
+.venv/bin/python -m openlens.cluster data/records/youtube-watch-events.csv --k 11 --days 90
 ```
 
 `--k`는 몇 개의 그룹을 만들어 볼지 정하는 값입니다. 기본값 11은 비교 실험에서 선택한 값이지, 확정된 카테고리 개수가 아닙니다. EmbeddingGemma가 최근 90일의 고유 영상 제목을 벡터로 바꾸고 K-Means가 비슷한 제목을 묶습니다. 같은 영상을 여러 번 봤다면 군집에는 한 번만 넣고, 시청 횟수에는 반복을 반영합니다. 그룹의 대표 제목을 보고 무엇에 관한 군집인지 해석하는 일은 아직 사람의 몫입니다. 결과는 터미널에만 나오며 파일로 저장되지 않습니다. 화면에 개인 시청 제목이 보일 수 있으니 공유할 때 주의해야 합니다.
@@ -135,7 +149,7 @@ Chrome 기록은 Python에서 `read_chrome_navigation_events("/path/to/Takeout/C
 ### 로컬 시각화
 
 ```bash
-.venv/bin/python -m openlens.visualize data/youtube-watch-events.csv --k 11 --days 90
+.venv/bin/python -m openlens.visualize data/records/youtube-watch-events.csv --k 11 --days 90
 ```
 
 이 명령은 `artifacts/clusters-k11-days90.html`에 오프라인 보고서를 만듭니다. 브라우저로 열면 군집별 고유 영상 수와 시청 횟수, 제목의 점 분포를 볼 수 있습니다. 점이 클수록 많이 본 영상이고, 마우스를 올리면 제목이 나옵니다. 화면에 표시하기 위해 임베딩 벡터를 PCA로 2차원에 줄였기 때문에, 그래프에서 보이는 거리가 원래의 고차원 거리를 그대로 나타내지는 않습니다. 개인 시청 제목이 담긴 보고서는 `artifacts/`에 두고 Git에서는 제외합니다. 아직 화면에서 그룹을 직접 고칠 수는 없지만, 다른 `--k` 값으로 보고서를 다시 만들어 비교할 수 있습니다.
@@ -145,25 +159,35 @@ Chrome 기록은 Python에서 `read_chrome_navigation_events("/path/to/Takeout/C
 상위 카테고리만으로는 내가 무엇을 주로 봤는지 충분히 알기 어렵습니다. 그래서 카테고리 하나를 골라 그 안에서 다시 비슷한 영상을 찾아봅니다. 아래 예시는 Entertainment를 `k=5`로 묶고, 각 군집의 중심부터 바깥쪽까지 네 구간에서 영상 5개씩을 뽑습니다. 한 구간 안에서도 이미 고른 영상과 다른 후보를 우선합니다. 상위 분류가 `review_needed`인 영상도 탐색에는 포함하되, 샘플 CSV에 상태를 남깁니다. 그 상태를 하위 주제의 정답으로 쓰지는 않습니다.
 
 ```bash
-HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.subcategory sample data/category-predictions-verified-saved.csv --parent Entertainment --k 5 --per-cluster 20
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.subcategory sample data/predictions/category-predictions-retrained.csv --parent Entertainment --k 5 --per-cluster 20
 ```
 
-전체 군집 결과는 `data/subcategories/entertainment-clusters-k5-diverse.csv`, 직접 레이블링할 샘플은 `data/subcategories/entertainment-label-samples-k5-diverse.csv`에 저장됩니다. 기존 `-k5.csv` 레이블 파일은 그대로 둡니다. 샘플의 `primary_label`에 가장 잘 맞는 하위 카테고리 하나를 적고, 보조 카테고리가 필요하다면 `secondary_labels`에 `|`로 구분해 적습니다. 제목만으로 모르겠거나 Entertainment에 속하지 않는 영상이라면 주 레이블을 비워 두고 `review_note`에 이유를 남기면 됩니다. 쓸 수 있는 이름은 [하위 카테고리 초안](src/openlens/subcategory_taxonomy.py)에서 확인하고 바꿀 수 있습니다. `cluster_id`는 임시 그룹 번호이지 카테고리 이름이 아닙니다.
+전체 군집 결과는 `data/clusters/entertainment-clusters-k5-diverse.csv`, 직접 레이블링할 샘플은 `data/labels/entertainment-label-samples-k5-diverse.csv`에 저장됩니다. 저장 위치를 바꿀 때는 각각 `--output-dir`, `--labels-dir`를 지정합니다. 기존 레이블 파일이 있으면 새 샘플로 덮어쓰지 않으므로, 다시 샘플을 뽑을 때는 두 경로에 새 폴더를 지정해야 합니다. 샘플의 `primary_label`에 가장 잘 맞는 하위 카테고리 하나를 적고, 보조 카테고리가 필요하다면 `secondary_labels`에 `|`로 구분해 적습니다. 제목만으로 모르겠거나 Entertainment에 속하지 않는 영상이라면 주 레이블을 비워 두고 `review_note`에 이유를 남기면 됩니다. 쓸 수 있는 이름은 [하위 카테고리 초안](src/openlens/subcategory_taxonomy.py)에서 확인하고 바꿀 수 있습니다. `cluster_id`는 임시 그룹 번호이지 카테고리 이름이 아닙니다.
 
 서로 다른 주 레이블을 두 종류 이상 입력해야 아래 명령으로 학습할 수 있습니다. 모델은 **직접 확인한 주 레이블만** 배우고, Entertainment의 나머지 영상에는 하위 카테고리를 제안합니다. 보조 레이블은 입력한 내용을 보존하지만 아직 자동으로 예측하지는 않습니다.
 
 ```bash
-HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.subcategory classify data/subcategories/entertainment-clusters-k5-diverse.csv data/subcategories/entertainment-label-samples-k5-diverse.csv --parent Entertainment --output data/subcategories/entertainment-predictions-diverse.csv --model-output models/entertainment-subcategory-diverse.joblib
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python -m openlens.subcategory classify data/clusters/entertainment-clusters-k5-diverse.csv data/labels/entertainment-label-samples-k5-diverse.csv --parent Entertainment --output data/predictions/entertainment-predictions-retrained.csv --model-output models/entertainment-subcategory-diverse.joblib
 ```
 
 다른 상위 카테고리도 `--parent`를 바꾸면 같은 방법으로 살펴볼 수 있습니다. 영상이 적은 카테고리에서는 `k=5`가 의미 없거나 실행되지 않을 수 있습니다. 그럴 때는 `--k`를 낮추거나 상위 레이블을 먼저 보강해야 합니다. 개인 결과물은 계속 `data/`와 `models/`에만 보관합니다.
 
 ### 카테고리별 영상 둘러보기
 
-상위·하위 예측 CSV를 디렉토리처럼 펼쳐 볼 수 있는 로컬 HTML도 만들 수 있습니다. 상위 카테고리 아래 하위 카테고리, 그 아래 개별 영상이 표시됩니다. 하위 분류를 아직 하지 않은 상위 카테고리는 `하위 미분류`로 남습니다.
+상위 `classify`나 하위 `subcategory classify` 명령이 성공하면 `artifacts/category-directory.html`이 자동 갱신됩니다. 같은 파일을 브라우저에서 열어 두고 새로고침하면 됩니다. HTML을 따로 만들거나 코드를 수정할 필요는 없습니다. 새 상위 학습은 이전 하위 결과 연결을 초기화하며, 각 하위 학습이 끝날 때 해당 카테고리가 다시 연결됩니다. 등록된 파일 경로는 로컬의 `data/predictions/latest-results.json`에 보관합니다.
+
+이미 학습한 결과를 처음 연결하거나 등록 정보를 복구할 때는 아래 명령을 한 번 실행할 수 있습니다. 상위·하위의 영상 목록이 일치하는지 확인한 뒤 같은 보고서를 갱신합니다.
 
 ```bash
-.venv/bin/python -m openlens.browse_categories data/category-predictions-diverse.csv --subcategory data/subcategories/entertainment-predictions-diverse.csv --output artifacts/category-directory.html
+.venv/bin/python -m openlens.browse_categories data/predictions/category-predictions-assisted-retrained.csv --subcategory data/predictions/entertainment-predictions-assisted-retrained.csv --latest
+```
+
+예측 CSV의 제목 단서를 먼저 점검하려면 `python -m openlens.review_predictions 예측.csv 레이블.csv`를 사용할 수 있습니다. 하위 결과에는 `--lower`를 붙입니다. 이 명령은 원본을 `.before-review.csv`로 백업하고, 수작업 정답을 유지하면서 제목 규칙의 제안을 `ai_suggested`로 기록합니다. 영상 내용을 확인한 정답은 아니며 학습 레이블로 자동 확정하지 않습니다. 기존 모델 확률은 `original_confidence`에 남기고, 규칙으로 바뀐 예측의 확률 칸은 비웁니다. 근거가 부족한 행은 계속 `review_needed`로 남습니다.
+
+특정 실행의 결과를 별도 파일로 남기고 싶다면 아래처럼 `--output`을 지정합니다. 상위 카테고리 아래 하위 카테고리, 그 아래 개별 영상이 표시됩니다. 하위 분류를 아직 하지 않은 상위 카테고리는 `하위 미분류`로 남습니다.
+
+```bash
+.venv/bin/python -m openlens.browse_categories data/predictions/category-predictions-retrained.csv --subcategory data/predictions/entertainment-predictions-retrained.csv --output artifacts/category-directory.html
 ```
 
 다른 상위 카테고리의 하위 예측 CSV가 생기면 `--subcategory`를 반복해 추가할 수 있습니다. 서로 다른 실행의 CSV를 섞으면 영상이나 상위 카테고리가 맞지 않을 수 있으며, 그런 하위 결과는 보고서에서 제외하고 개수를 알립니다. HTML에는 개인 시청 제목이 들어 있으므로 로컬에서만 열고 공유하거나 GitHub에 올리지 않습니다. 기존 보고서는 덮어쓰지 않으니 새 실행에서는 다른 출력 이름을 지정합니다.
